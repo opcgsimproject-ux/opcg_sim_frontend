@@ -415,23 +415,28 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       try { 
           if (isLocalMode) {
               let localParams = { ...params };
+              
               if (type === 'START') {
-                  const p1Id = gameState.players.p1.name;
-                  const p2Id = gameState.players.p2.name;
+                  const p1DeckId = gameState.players.p1.name;
+                  const p2DeckId = gameState.players.p2.name;
                   
-                  const getDeck = async (id: string) => {
-                      const url = id.startsWith('db:') 
-                          ? `${API_CONFIG.BASE_URL}/api/deck/get?id=${id.substring(3)}`
-                          : `${API_CONFIG.BASE_URL}/api/deck/get?id=${id}`;
+                  const getDeckData = async (deckId: string) => {
+                      if (!deckId) return { leader: [], cards: [] };
+                      const url = deckId.startsWith('db:') 
+                          ? `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId.substring(3)}`
+                          : `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`;
+                      
                       const res = await fetch(url);
                       const data = await res.json();
                       return data.deck || data;
                   };
                   
-                  const [d1, d2] = await Promise.all([getDeck(p1Id), getDeck(p2Id)]);
+                  logger.log({ level: 'info', action: 'local.fetch_decks', msg: 'Fetching deck data for local start' });
+                  const [d1, d2] = await Promise.all([getDeckData(p1DeckId), getDeckData(p2DeckId)]);
                   localParams.p1Deck = d1;
                   localParams.p2Deck = d2;
               }
+
               const nextState = handleLocalAction(gameState, type, localParams);
               setGameState(nextState);
           } else {
@@ -439,7 +444,11 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
               const res = await apiClient.sendSandboxAction(activeGameId!, { action_type: type, player_id: pid, ...params }); 
               setGameState(res.state); 
           }
-      } catch(e) { logger.error('sandbox.action_fail', String(e)); } finally { setIsPending(false); }
+      } catch(e) { 
+          logger.error('sandbox.action_fail', String(e)); 
+      } finally { 
+          setIsPending(false); 
+      }
   };
 
   if (gameState && gameState.status === 'WAITING') {
