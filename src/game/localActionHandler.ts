@@ -1,4 +1,4 @@
-import { GameState } from './types';
+import type { GameState } from './types';
 import { moveCardLocal, toggleRestLocal, createInitialGameState } from './localLogic';
 import { logger } from '../utils/logger';
 
@@ -22,7 +22,7 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
     case 'TOGGLE_REST':
       return toggleRestLocal(state, params.card_uuid);
     case 'RESET':
-      return createInitialGameState({}, {}, state.room_name || 'local-room');
+      return createInitialGameState(null, null, state.room_name || 'local-room');
     default:
       logger.warn('local_action.unknown', `Action ${actionType} is not implemented locally.`);
       return state;
