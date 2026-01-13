@@ -1,0 +1,113 @@
+{
+  "PLAYER_KEYS": {
+    "P1": "p1",
+    "P2": "p2"
+  },
+  "API_ROOT_KEYS": {
+    "GAME_STATE": "game_state",
+    "PENDING_REQUEST": "pending_request",
+    "SUCCESS": "success",
+    "ERROR": "error",
+    "GAME_ID": "game_id"
+  },
+  "PLAYER_PROPERTIES": {
+    "DON_DECK_COUNT": "don_deck_count",
+    "DON_ACTIVE": "don_active",
+    "DON_RESTED": "don_rested",
+    "LIFE_COUNT": "life_count"
+  },
+  "GAME_CONFIG": {
+    "INITIAL_DON_COUNT": 10,
+    "INITIAL_LIFE_COUNT": 5
+  },
+  "CARD_PROPERTIES": {
+    "UUID": "uuid",
+    "CARD_ID": "card_id",
+    "NAME": "name",
+    "POWER": "power",
+    "COST": "cost",
+    "COUNTER": "counter",
+    "ATTRIBUTE": "attribute",
+    "TRAITS": "traits",
+    "TEXT": "text",
+    "TYPE": "type",
+    "TYPE_LEADER": "LEADER",
+    "TYPE_CHARACTER": "CHARACTER",
+    "IS_REST": "is_rest",
+    "IS_FACE_UP": "is_face_up",
+    "ATTACHED_DON": "attached_don",
+    "OWNER_ID": "owner_id",
+    "KEYWORDS": "keywords"
+  },
+  "LOG_CONFIG": {
+    "KEYS": {
+      "TIME": "timestamp",
+      "SOURCE": "source",
+      "LEVEL": "level",
+      "SESSION": "sessionId",
+      "PLAYER": "player",
+      "ACTION": "action",
+      "MESSAGE": "msg",
+      "PAYLOAD": "payload"
+    }
+  },
+  "c_to_s_interface": {
+    "PLAYER_KEYS": {
+      "P1": "p1",
+      "P2": "p2"
+    },
+    "GAME_ACTIONS": {
+      "TYPES": {
+        "PLAY": "PLAY",
+        "ATTACK": "ATTACK",
+        "ATTACK_CONFIRM":  "ATTACK_CONFIRM",
+        "ACTIVATE_MAIN": "ACTIVATE_MAIN",
+        "ATTACH_DON": "ATTACH_DON",
+        "TURN_END": "TURN_END",
+        "SELECT_TARGET": "SELECT_TARGET",
+        "RESOLVE_EFFECT_SELECTION": "RESOLVE_EFFECT_SELECTION"
+      }
+    },
+    "BATTLE_ACTIONS": {
+      "TYPES": {
+        "SELECT_BLOCKER": "SELECT_BLOCKER",
+        "SELECT_COUNTER": "SELECT_COUNTER",
+        "PASS": "PASS"
+      }
+    },
+    "PENDING_ACTION_TYPES": {
+      "SEARCH_AND_SELECT": "SEARCH_AND_SELECT",
+      "ORDER_CARDS": "ORDER_CARDS",
+      "SELECT_RESOURCE": "SELECT_RESOURCE",
+      "CONFIRM_DECISION": "CONFIRM_DECISION"
+    }
+  },
+  "PENDING_REQUEST_PROPERTIES": {
+    "PLAYER_ID": "player_id",
+    "ACTION": "action",
+    "SELECTABLE_UUIDS": "selectable_uuids",
+    "CAN_SKIP": "can_skip",
+    "MESSAGE": "message",
+    "CANDIDATES": "candidates",
+    "CONSTRAINTS": "constraints",
+    "OPTIONS": "options"
+  },
+  "ERROR_PROPERTIES": {
+    "CODE": "code",
+    "MESSAGE": "message"
+  },
+  "ERROR_CODES": {
+    "GAME_NOT_FOUND": "GAME_NOT_FOUND",
+    "INVALID_ACTION": "INVALID_ACTION",
+    "NOT_YOUR_TURN": "NOT_YOUR_TURN",
+    "INSUFFICIENT_COST": "INSUFFICIENT_COST",
+    "INVALID_TARGET": "INVALID_TARGET",
+    "INVALID_PHASE": "INVALID_PHASE"
+  }, 
+  "BATTLE_PROPERTIES": {
+    "ACTIVE_BATTLE": "active_battle",
+    "ATTACKER_UUID": "attacker_uuid",
+    "TARGET_UUID": "target_uuid",
+    "COUNTER_BUFF": "counter_buff"
+  }
+}
