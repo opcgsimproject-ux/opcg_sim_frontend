@@ -11,7 +11,6 @@ import { apiClient } from '../api/client';
 import type { GameState, CardInstance } from '../game/types';
 import { API_CONFIG } from '../api/api.config';
 import { logger } from '../utils/logger';
-// handleLocalAction をインポート（最新の localLogic.ts の機能を使います）
 import { handleLocalAction } from '../game/localActionHandler';
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
@@ -77,9 +76,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
   const isActionBlockedByMulligan = useMemo(() => {
     if (!gameState || !isMulliganPhase || myPlayerId === 'both') return false;
-    if (myPlayerId === 'p1') return !mulliganStatus.p2 || !mulliganStatus.p1;
+    if (myPlayerId === 'p1') return !(gameState as any).mulligan_finished?.p2 || !(gameState as any).mulligan_finished?.p1;
     return false;
-  }, [gameState, isMulliganPhase, mulliganStatus, myPlayerId]);
+  }, [gameState, isMulliganPhase, myPlayerId]);
 
   const startLongPress = (card: CardInstance, x: number, y: number) => {
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
@@ -112,23 +111,48 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
         const data = await res.json();
         if (data.success) {
-          setDeckOptions([{ id: 'imu.json', name: 'Imu (Default)' }, { id: 'nami.json', name: 'Nami (Default)' }, ...data.decks.map((d: any) => ({ id: `db:${d.id}`, name: d.name }))]);
+          // ▼▼▼ 修正: Imu/Namiを除外し、DBのデッキのみを表示 ▼▼▼
+          const filteredDecks = data.decks
+            .filter((d: any) => d.id !== 'imu.json' && d.id !== 'nami.json')
+            .map((d: any) => {
+                // すでに db: がついている場合とついていない場合を考慮
+                const id = d.id.startsWith('db:') ? d.id : `db:${d.id}`;
+                return { id, name: d.name };
+            });
+          setDeckOptions(filteredDecks);
         }
-      } catch(e) { console.error(e); }
+      } catch(e) { 
+        console.error(e); 
+      }
     };
     fetchDecks();
   }, []);
 
+  // ▼▼▼ オートセーブの読み込みと保存 ▼▼▼
   useEffect(() => {
     if (isLocalMode) {
+      const savedData = localStorage.getItem('opcg_sim_autosave');
+      if (savedData) {
+        try {
+          const parsed = JSON.parse(savedData);
+          if (parsed && parsed.game_id) {
+            setGameState(parsed);
+            return;
+          }
+        } catch (e) {
+          logger.error('local.load_fail', 'Failed to parse save data');
+        }
+      }
+
       setGameState({
         game_id: 'local-init',
         room_name: roomName || 'LOCAL',
         status: 'WAITING',
         ready_states: { p1: false, p2: false },
         players: {
-          p1: { name: 'imu.json', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
-          p2: { name: 'nami.json', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
+          // ▼▼▼ 修正: デフォルトを空にする ▼▼▼
+          p1: { name: '', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
+          p2: { name: '', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
         },
         turn_info: { turn_count: 0, active_player_id: 'p1', current_phase: 'SETUP', winner: null }
       });
@@ -162,6 +186,12 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     initGame();
     return () => { if (ws) ws.close(); };
   }, [isLocalMode]);
+
+  useEffect(() => {
+    if (isLocalMode && gameState && gameState.status === 'PLAYING') {
+      localStorage.setItem('opcg_sim_autosave', JSON.stringify(gameState));
+    }
+  }, [gameState, isLocalMode]);
 
   useEffect(() => {
     if (!pixiContainerRef.current || (gameState && gameState.status === 'WAITING')) return;
@@ -207,15 +237,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   useEffect(() => {
     const app = appRef.current;
     if (!app || !gameState || gameState.status === 'WAITING') return;
-    const children = [...app.stage.children];
-    children.forEach(child => { 
-        if (dragState && child === dragState.sprite) { }
-        else if (inspecting && overlayRef.current && child === overlayRef.current) { 
-             app.stage.removeChild(child); child.destroy({ children: true });
-        } else {
-             app.stage.removeChild(child); child.destroy({ children: true });
-        }
-    });
+    app.stage.removeChildren();
     
     const { width: W, height: H } = app.screen;
     const coords = calculateCoordinates(W, H);
@@ -275,7 +297,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     }
 
     if (dragState) app.stage.addChild(dragState.sprite);
-  }, [gameState, isPending, dragState, inspecting, isRotated, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
+  }, [gameState, isPending, dragState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
 
   useEffect(() => {
     const app = appRef.current;
@@ -427,7 +449,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                         return { leader: [], cards: [] };
                       }
                       
-                      // ▼▼▼ 修正: db: プレフィックスを削除せず、そのままAPIに渡す ▼▼▼
+                      // ▼▼▼ 修正: モックは廃止し、常にAPIへリクエスト ▼▼▼
                       const url = `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`;
                       
                       logger.log({ level: 'info', action: 'local.fetch_deck', msg: `Fetching deck: ${deckId}` });
@@ -484,8 +506,18 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             </div>
           ))}
         </div>
-        <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
+        <div style={{ marginTop: '40px', display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button onClick={onBack} style={{ padding: '12px 25px', background: '#555', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>退出</button>
+          <button 
+            onClick={() => {
+                localStorage.removeItem('opcg_sim_autosave');
+                handleAction('RESET', {});
+                window.location.reload(); 
+            }} 
+            style={{ padding: '12px 25px', background: '#d35400', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}
+          >
+            データ削除
+          </button>
           {(myPlayerId === 'p1' || myPlayerId === 'both') && <button disabled={!(gameState.ready_states?.p1 && gameState.ready_states?.p2)} onClick={() => handleAction('START', {})} style={{ padding: '12px 50px', background: (gameState.ready_states?.p1 && gameState.ready_states?.p2) ? '#2ecc71' : '#333', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>開始</button>}
         </div>
       </div>
@@ -507,7 +539,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           </div>
         </div>
       )}
-      {!gameState && <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', color: 'white' }}><h2>Connecting...</h2></div>}
+      {!gameState && <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', color: 'white' }}><h2>Loading...</h2></div>}
       
       {selectedCard && (
         <CardDetailSheet card={selectedCard} location="unknown" isMyTurn={false} onAction={async () => {}} onClose={() => setSelectedCard(null)} />
