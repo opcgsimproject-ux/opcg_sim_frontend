@@ -12,7 +12,8 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       name: "Unknown Leader",
       power: 5000,
       ...leaderRaw,
-      card_id: leaderRaw?.card_id || leaderRaw?.number || leaderRaw?.id || "LEADER",
+      // ★重要: バックエンドの 'uuid' (OP01-001等) が上書きされる前に card_id へ保存
+      card_id: leaderRaw?.uuid || leaderRaw?.card_id || leaderRaw?.number || leaderRaw?.id || "LEADER",
       uuid: uuidv4(),
       owner_id: playerId,
       is_rest: false,
@@ -24,12 +25,13 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       .filter((c: any) => (c.type || '').toUpperCase() !== 'LEADER')
       .map((c: any) => ({
         ...c,
-        card_id: c.card_id || c.number || c.id,
+        // ★重要: ここでも元のIDを確保
+        card_id: c.uuid || c.card_id || c.number || c.id,
         uuid: uuidv4(),
         owner_id: playerId,
         is_rest: false,
         attached_don: 0,
-        is_face_up: true
+        is_face_up: true // 画像を表示するために必須
       }));
 
     const shuffled = [...mainCards].sort(() => Math.random() - 0.5);
@@ -69,7 +71,7 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
     turn_info: { turn_count: 1, active_player_id: 'p1', current_phase: 'MAIN', winner: null }
   };
 
-  // ログ出力で未使用エラー回避
+  // ログ出力（未使用変数エラー回避）
   logger.log({
     level: 'info',
     action: 'local.init_game',
@@ -117,6 +119,13 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
     }
   }
 
+  logger.log({ 
+    level: 'info', 
+    action: 'local.move_card', 
+    msg: `Moved ${targetCard.name} to ${destPid}.${destZone}`,
+    payload: { cardUuid, destPid, destZone }
+  });
+
   return newState;
 };
 
@@ -143,7 +152,7 @@ export const resolveTurnEndLocal = (state: GameState): GameState => {
   const nextPid = newState.turn_info.active_player_id === 'p1' ? 'p2' : 'p1';
   const nextPlayer = newState.players[nextPid];
 
-  // リフレッシュフェーズ: アクティブ化
+  // リフレッシュフェーズ
   if (nextPlayer.leader) { nextPlayer.leader.is_rest = false; nextPlayer.leader.attached_don = 0; }
   if (nextPlayer.stage) { nextPlayer.stage.is_rest = false; }
   nextPlayer.zones.field.forEach(c => { c.is_rest = false; c.attached_don = 0; });
@@ -155,17 +164,15 @@ export const resolveTurnEndLocal = (state: GameState): GameState => {
   nextPlayer.don_attached = [];
   nextPlayer.don_active.forEach(d => d.is_rest = false);
 
-  // ドローフェーズ (修正: undefinedチェックを追加)
-  // zones.deck が存在しない場合に備えて空配列をフォールバックに設定
+  // ドローフェーズ (undefinedチェック付き)
   const deck = nextPlayer.zones.deck || [];
   if (deck.length > 0) {
     const card = deck.shift();
     if (card) nextPlayer.zones.hand.push(card);
-    // 更新されたdeckを書き戻す（参照が切れている可能性があるため）
     nextPlayer.zones.deck = deck;
   }
 
-  // ドン!!追加フェーズ
+  // ドン!!追加フェーズ (undefinedチェック付き)
   const currentDonCount = nextPlayer.don_active.length;
   const donToAdd = Math.min(2, 10 - currentDonCount);
   const donDeck = nextPlayer.zones.don_deck || [];
