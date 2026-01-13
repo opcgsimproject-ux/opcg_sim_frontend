@@ -126,8 +126,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         status: 'WAITING',
         ready_states: { p1: false, p2: false },
         players: {
-          p1: { name: 'Player 1', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
-          p2: { name: 'Player 2', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
+          p1: { name: 'p1', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
+          p2: { name: 'p2', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
         },
         turn_info: { turn_count: 0, active_player_id: 'p1', current_phase: 'SETUP', winner: null }
       });
@@ -421,17 +421,17 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                   const p2DeckId = gameState.players.p2.name;
                   
                   const getDeckData = async (deckId: string) => {
-                      if (!deckId) return { leader: [], cards: [] };
+                      if (!deckId || deckId === 'p1' || deckId === 'p2') return { leader: [], cards: [] };
                       const url = deckId.startsWith('db:') 
                           ? `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId.substring(3)}`
                           : `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`;
                       
+                      logger.log({ level: 'info', action: 'local.fetch_deck', msg: `Fetching deck: ${deckId}` });
                       const res = await fetch(url);
                       const data = await res.json();
                       return data.deck || data;
                   };
                   
-                  logger.log({ level: 'info', action: 'local.fetch_decks', msg: 'Fetching deck data for local start' });
                   const [d1, d2] = await Promise.all([getDeckData(p1DeckId), getDeckData(p2DeckId)]);
                   localParams.p1Deck = d1;
                   localParams.p2Deck = d2;
