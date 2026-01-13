@@ -37,6 +37,16 @@ interface FilterState {
   sort: string;
 }
 
+const getLocalDecks = (): DeckData[] => {
+  try {
+    const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
+    return ids.map((id: string) => {
+      const data = localStorage.getItem(`opcg_deck_${id}`);
+      return data ? JSON.parse(data) : null;
+    }).filter((d: any) => d !== null);
+  } catch (e) { return []; }
+};
+
 const CardImageStub = ({ card, count, onClick }: { card: CardData | { name: string, uuid?: string }, count?: number, onClick?: () => void }) => {
   const [imgError, setImgError] = useState(false);
   const imageUrl = card.uuid ? `${API_CONFIG.IMAGE_BASE_URL}/${card.uuid}.png` : null;
@@ -314,17 +324,6 @@ const FilterModal = ({ filters, setFilters, traitList, setList, onClose, onReset
   );
 };
 
-// ヘルパー: ローカルのデッキリストを取得
-const getLocalDecks = (): DeckData[] => {
-  try {
-    const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
-    return ids.map((id: string) => {
-      const data = localStorage.getItem(`opcg_deck_${id}`);
-      return data ? JSON.parse(data) : null;
-    }).filter((d: any) => d !== null);
-  } catch (e) { return []; }
-};
-
 const DeckDistributionModal = ({ deck, allCards, onClose }: { deck: DeckData, allCards: CardData[], onClose: () => void }) => {
   const stats = useMemo(() => {
     const cards = deck.card_uuids.map(uuid => allCards.find(c => c.uuid === uuid)).filter(Boolean) as CardData[];
@@ -401,7 +400,6 @@ const DeckListView = ({ decks, onSelectDeck, onCreateNew, onBack }: { decks: Dec
                 <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{deck.name}</div>
                     <div style={{ fontSize: '12px', color: '#888' }}>{deck.card_uuids.length}枚</div>
-                    {deck.id && deck.id.startsWith('local-') && <div style={{ fontSize: '10px', color: '#e67e22' }}>Local Draft</div>}
                 </div>
                 <div style={{ fontSize: '20px', color: '#555' }}>›</div>
             </div>
@@ -519,14 +517,18 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
     } else { res = res.filter(c => c.type === 'LEADER'); }
 
     if (filters.color.length > 0) {
-        const selected = filters.color.map(c => normalizeColor(c));
-        res = res.filter(c => c.color?.flatMap(col => col.split(/[\/／]/)).map(col => normalizeColor(col)).some(cc => selected.includes(cc)));
+      const selected = filters.color.map(c => normalizeColor(c));
+      res = res.filter(c => {
+        if (!c.color) return false;
+        const cardColors = c.color.flatMap(col => col.split(/[\/／]/)).map(col => normalizeColor(col));
+        return cardColors.some(cc => selected.includes(cc));
+      });
     }
-    
-    // 他のフィルタ適用
+
     if (filters.type.length > 0) res = res.filter(c => filters.type.includes(c.type));
     if (filters.attribute.length > 0) res = res.filter(c => c.attributes?.some(attr => filters.attribute.includes(attr)));
     if (filters.traits.length > 0) res = res.filter(c => c.traits?.some(t => filters.traits.includes(t)));
+    
     if (filters.counter.length > 0) {
       res = res.filter(c => {
         if (filters.counter.includes('NONE') && !c.counter) return true;
@@ -684,15 +686,16 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. 全カードデータのキャッシュ読み込み & バックグラウンド更新
-      let loadedCards = false;
+      let loadedFromCache = false;
       try {
-        const cached = localStorage.getItem('opcg_card_db');
-        if (cached) {
-           const cards = JSON.parse(cached);
-           setAllCards(cards);
-           loadedCards = true;
-           logger.log({ level: 'info', action: 'deck_builder.cache_hit', msg: 'Loaded cards from local storage' });
+        const cachedCards = localStorage.getItem('opcg_card_db');
+        if (cachedCards) {
+           const parsed = JSON.parse(cachedCards);
+           if (Array.isArray(parsed) && parsed.length > 0) {
+             setAllCards(parsed);
+             loadedFromCache = true;
+             logger.log({ level: 'info', action: 'deck_builder.cache_hit', msg: 'Loaded cards from local storage' });
+           }
         }
       } catch(e) { console.error(e); }
 
@@ -701,36 +704,29 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
         const cData = await cRes.json();
         if (cData.success) {
            setAllCards(cData.cards);
-           // ★ 全カードデータをローカル保存 (次回以降の爆速起動用)
            localStorage.setItem('opcg_card_db', JSON.stringify(cData.cards));
         }
       } catch (e) {
-         if (!loadedCards) {
-           logger.error('deck_builder.init', 'Failed to load cards and no cache found');
-           alert('カードデータの取得に失敗しました。インターネット接続を確認してください。');
+         if (!loadedFromCache) {
+           logger.error('deck_builder.init', 'Failed to load cards');
          }
       }
 
       if (!viewOnly) {
-        // サーバーデッキ取得
         let serverDecks: DeckData[] = [];
         try {
           const dRes = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
           const dData = await dRes.json();
           if (dData.success) serverDecks = dData.decks;
-        } catch(e) { console.log('Offline: cannot fetch server decks'); }
+        } catch(e) { console.log('Offline'); }
 
-        // ローカルデッキ取得
         const localDecks = getLocalDecks();
-        
-        // 結合
         const merged = [...serverDecks];
         localDecks.forEach(ld => {
           if (!merged.find(md => md.id === ld.id)) {
             merged.push(ld);
           }
         });
-        
         setDecks(merged);
       }
     };
@@ -739,14 +735,11 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
 
   const handleSaveDeck = async () => {
     if (!currentDeck) return;
-    
     const isNew = !currentDeck.id;
     const tempId = currentDeck.id || `local-${Date.now()}`;
     const deckToSave = { ...currentDeck, id: tempId };
-
     const leaderCard = allCards.find(c => c.uuid === deckToSave.leader_id);
     const cardObjects = deckToSave.card_uuids.map(uuid => allCards.find(c => c.uuid === uuid)).filter(Boolean);
-    
     const sandboxFormat = {
       deck: { 
         leader: leaderCard ? [leaderCard] : [],
@@ -755,43 +748,38 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
       ...deckToSave
     };
 
-    localStorage.setItem(`opcg_deck_${tempId}`, JSON.stringify(sandboxFormat));
-    
-    if (isNew || tempId.startsWith('local-')) {
-       const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
-       if (!ids.includes(tempId)) {
-         localStorage.setItem('opcg_local_deck_ids', JSON.stringify([...ids, tempId]));
-       }
-    }
+    try {
+      localStorage.setItem(`opcg_deck_${tempId}`, JSON.stringify(sandboxFormat));
+      const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
+      if (!ids.includes(tempId)) {
+        localStorage.setItem('opcg_local_deck_ids', JSON.stringify([...ids, tempId]));
+      }
+      setDecks(prev => {
+        const exists = prev.find(d => d.id === tempId);
+        return exists ? prev.map(d => d.id === tempId ? deckToSave : d) : [...prev, deckToSave];
+      });
+    } catch (e) { alert('容量不足'); return; }
 
     try {
       const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(deckToSave) 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deckToSave) 
       });
       const data = await res.json();
       if (data.success) {
          const serverId = data.deck_id;
          const serverDeck = { ...deckToSave, id: serverId };
          const serverSandboxFormat = { ...sandboxFormat, ...serverDeck, deck: sandboxFormat.deck };
-
          localStorage.setItem(`opcg_deck_${serverId}`, JSON.stringify(serverSandboxFormat));
-         
          if (tempId !== serverId) {
            localStorage.removeItem(`opcg_deck_${tempId}`);
            const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
            localStorage.setItem('opcg_local_deck_ids', JSON.stringify(ids.filter((id: string) => id !== tempId)));
          }
-         
          setCurrentDeck(serverDeck);
          alert('保存しました (同期完了)');
          return;
       }
-    } catch (e) {
-      console.warn('Offline save');
-    }
-    
+    } catch (e) { console.warn('Offline save'); }
     setCurrentDeck(deckToSave);
     alert('保存しました (オフライン)');
   };

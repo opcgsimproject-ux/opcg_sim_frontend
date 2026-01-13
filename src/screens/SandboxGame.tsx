@@ -13,7 +13,6 @@ import { API_CONFIG } from '../api/api.config';
 import { logger } from '../utils/logger';
 import { handleLocalAction } from '../game/localActionHandler';
 
-// オフライン用モックデータ (キャッシュがない場合のフォールバック)
 const MOCK_DECKS: Record<string, any> = {
   'imu.json': {
     leader: { name: "イム", card_id: "ST01-001", power: 5000, type: "LEADER", life: 5 },
@@ -137,28 +136,36 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
   useEffect(() => {
     const fetchDecks = async () => {
+      const options: {id: string, name: string}[] = [
+        { id: 'imu.json', name: 'Imu (Offline)' }, 
+        { id: 'nami.json', name: 'Nami (Offline)' }
+      ];
+
+      try {
+        const localIds = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
+        localIds.forEach((id: string) => {
+          const deckData = localStorage.getItem(`opcg_deck_${id}`);
+          if (deckData) {
+            const parsed = JSON.parse(deckData);
+            options.push({ id: id, name: parsed.name || `Local Deck ${id}` });
+          }
+        });
+      } catch(e) { console.error(e); }
+
       try {
         const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
         const data = await res.json();
         if (data.success) {
-          setDeckOptions([
-            { id: 'imu.json', name: 'Imu (Offline)' }, 
-            { id: 'nami.json', name: 'Nami (Offline)' }, 
-            ...data.decks.map((d: any) => ({ id: `db:${d.id}`, name: d.name }))
-          ]);
+          data.decks.forEach((d: any) => { options.push({ id: `db:${d.id}`, name: d.name }); });
         }
-      } catch(e) { 
-        setDeckOptions([
-            { id: 'imu.json', name: 'Imu (Offline)' }, 
-            { id: 'nami.json', name: 'Nami (Offline)' }
-        ]);
-        console.error(e); 
-      }
+      } catch(e) { console.error(e); }
+
+      const uniqueOptions = Array.from(new Map(options.map(item => [item.id, item])).values());
+      setDeckOptions(uniqueOptions);
     };
     fetchDecks();
   }, []);
 
-  // 初期化ロジック (オートセーブ廃止により簡素化)
   useEffect(() => {
     if (isLocalMode) {
       setGameState({
@@ -307,9 +314,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     }
 
     if (dragState) app.stage.addChild(dragState.sprite);
-  }, [gameState, isPending, dragState, inspecting, isRotated, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
+  }, [gameState, isPending, dragState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
 
-  // ポインターイベントハンドリング
   useEffect(() => {
     const app = appRef.current;
     if (!app) return;
@@ -328,7 +334,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     
     const onPointerUp = async (e: PointerEvent) => {
         cancelLongPress();
-
         if (!dragState) return;
         const card = dragState.card; const endPos = { x: e.clientX, y: e.clientY };
         if ((card.type || '').toUpperCase() === 'LEADER') { setDragState(null); return; }
@@ -349,7 +354,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
         const { width: W, height: H } = app.screen; const coords = calculateCoordinates(W, H); const midY = H / 2;
         const isTopArea = endPos.y < midY; let destPid = isTopArea ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1');
-        
         if (myPlayerId !== 'both' && destPid !== myPlayerId) { setDragState(null); return; }
 
         if (inspecting && overlayRef.current && inspecting.pid === destPid) {
@@ -358,7 +362,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
              const PANEL_Y = 15; 
              const PANEL_H = Math.min(H * 0.48, 450);
              const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= PANEL_Y + PANEL_H;
-
              if (isInsidePanel) {
                  const HEADER_HEIGHT = 40;
                  const SCROLL_ZONE_HEIGHT = 70;
@@ -390,12 +393,10 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         const THRESHOLD = coords.CH; 
         const checkZone = (isTopSide: boolean) => {
             const getX = (val: number) => isTopSide ? W - val : val;
-
             const yBase = isTopSide ? 0 : midY;
             const r2Y = isTopSide ? coords.midY - coords.getY(2) - coords.CH/2 : yBase + coords.getY(2) + coords.CH/2;
             const r3Y = isTopSide ? coords.midY - coords.getY(3) - coords.CH/2 : yBase + coords.getY(3) + coords.CH/2;
             const r4Y = isTopSide ? coords.midY - coords.getY(4) - coords.CH/2 : yBase + coords.getY(4) + coords.CH/2;
-            
             if (checkDist(getX(coords.getLeaderX(W)), r2Y) < THRESHOLD) return 'leader';
             if (checkDist(getX(coords.getStageX(W)), r2Y) < THRESHOLD) return 'stage';
             if (checkDist(getX(coords.getLifeX(W)), r2Y) < THRESHOLD) return 'life';
@@ -444,64 +445,37 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   const handleAction = async (type: string, params: any) => {
       if (isPending || !gameState) return;
       if (!isLocalMode && !activeGameId) return;
-
       setIsPending(true);
       try { 
           if (isLocalMode) {
               let localParams = { ...params };
-              
               if (type === 'START') {
                   const p1DeckId = gameState.players.p1.name;
                   const p2DeckId = gameState.players.p2.name;
-                  
                   const getDeckData = async (deckId: string) => {
-                      // 1. Mock check
                       if (MOCK_DECKS[deckId]) return MOCK_DECKS[deckId];
-
-                      // 2. Cache check (デッキデータのみキャッシュ)
-                      const cacheKey = `opcg_deck_${deckId}`;
+                      let cacheKey = `opcg_deck_${deckId}`;
+                      if (deckId.startsWith('db:')) cacheKey = `opcg_deck_${deckId.substring(3)}`;
                       const cached = localStorage.getItem(cacheKey);
-                      if (cached) {
-                          try {
-                              logger.log({ level: 'info', action: 'local.cache_hit', msg: `Using cached deck: ${deckId}` });
-                              return JSON.parse(cached);
-                          } catch(e) { /* ignore */ }
-                      }
-
-                      if (!deckId || deckId === 'p1' || deckId === 'p2') {
-                        return { leader: [], cards: [] };
-                      }
-                      
-                      const url = `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`;
-                      const res = await fetch(url);
-                      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                      if (cached) { try { return JSON.parse(cached); } catch(e) {} }
+                      if (!deckId.startsWith('db:') && !['imu.json', 'nami.json'].includes(deckId)) return { leader: [], cards: [] };
+                      const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`);
+                      if (!res.ok) throw new Error();
                       const data = await res.json();
                       const finalData = data.deck || data;
-
-                      // 3. Save to cache
                       localStorage.setItem(cacheKey, JSON.stringify(finalData));
                       return finalData;
                   };
-                  
                   const [d1, d2] = await Promise.all([getDeckData(p1DeckId), getDeckData(p2DeckId)]);
-                  localParams.p1Deck = d1;
-                  localParams.p2Deck = d2;
+                  localParams.p1Deck = d1; localParams.p2Deck = d2;
               }
-
-              const nextState = handleLocalAction(gameState, type, localParams);
-              setGameState(nextState);
+              setGameState(handleLocalAction(gameState, type, localParams));
           } else {
               const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId; 
               const res = await apiClient.sendSandboxAction(activeGameId!, { action_type: type, player_id: pid, ...params }); 
               setGameState(res.state); 
           }
-      } catch(e) { 
-          const errorMsg = e instanceof Error ? e.message : String(e);
-          logger.error('sandbox.action_fail', errorMsg, { type, params });
-          alert(`アクション失敗: ${errorMsg}`);
-      } finally { 
-          setIsPending(false); 
-      }
+      } catch(e) { alert('エラー'); } finally { setIsPending(false); }
   };
 
   if (gameState && gameState.status === 'WAITING') {
@@ -540,7 +514,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', background: '#000' }}>
       <div ref={pixiContainerRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: inspecting ? 200 : 1 }} />
-      {/* ... (残りのJSXは変更なし) ... */}
       {dropChoice && (
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 10000, background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column' }}>
           <div style={{ background: '#2c3e50', padding: '30px', borderRadius: '15px', border: '2px solid #d4af37', textAlign: 'center', width: '80%', maxWidth: '400px' }}>
@@ -554,32 +527,15 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         </div>
       )}
       {!gameState && <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', color: 'white' }}><h2>Loading...</h2></div>}
-      
-      {selectedCard && (
-        <CardDetailSheet card={selectedCard} location="unknown" isMyTurn={false} onAction={async () => {}} onClose={() => setSelectedCard(null)} />
-      )}
-
+      {selectedCard && <CardDetailSheet card={selectedCard} location="unknown" isMyTurn={false} onAction={async () => {}} onClose={() => setSelectedCard(null)} />}
       {gameState && (
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 100, pointerEvents: 'none' }}>
             <div style={{ position: 'absolute', top: '10px', left: '10px', display: 'flex', gap: 10, pointerEvents: 'auto' }}>
                 <button onClick={onBack} style={{ background: 'rgba(0, 0, 0, 0.6)', color: 'white', border: '1px solid #555', borderRadius: '4px', padding: '5px 10px' }}>TOPへ</button>
                 <button onClick={() => { if(window.confirm('ゲームを初期状態にリセットしますか？')) handleAction('RESET', {}); }} style={{ background: 'rgba(200, 0, 0, 0.8)', color: 'white', border: '1px solid #555', borderRadius: '4px', padding: '5px 10px' }}>リセット</button>
             </div>
-
             {isMulliganPhase && (
-                <div style={{ 
-                    position: 'absolute', 
-                    top: (myPlayerId === 'both' && layoutCoords) ? `${layoutCoords.y + 22}px` : '60px', 
-                    left: '50%', 
-                    transform: (myPlayerId === 'both' && layoutCoords) ? 'translate(-50%, -50%)' : 'translateX(-50%)', 
-                    pointerEvents: 'auto', 
-                    display: 'flex', 
-                    gap: '20px', 
-                    background: 'rgba(0,0,0,0.6)', 
-                    padding: '15px', 
-                    borderRadius: '12px', 
-                    border: '1px solid #555' 
-                }}>
+                <div style={{ position: 'absolute', top: (myPlayerId === 'both' && layoutCoords) ? `${layoutCoords.y + 22}px` : '60px', left: '50%', transform: (myPlayerId === 'both' && layoutCoords) ? 'translate(-50%, -50%)' : 'translateX(-50%)', pointerEvents: 'auto', display: 'flex', gap: '20px', background: 'rgba(0,0,0,0.6)', padding: '15px', borderRadius: '12px', border: '1px solid #555' }}>
                     {(myPlayerId === 'p1' || myPlayerId === 'both') && !mulliganStatus.p1 && (
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ color: '#ffd700', fontSize: '12px', marginBottom: '5px', fontWeight: 'bold' }}>P1 マリガン</div>
@@ -600,23 +556,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                     )}
                 </div>
             )}
-
-            <button 
-                onClick={() => handleAction('TURN_END', {})} 
-                disabled={isPending || !isMyTurn || isActionBlockedByMulligan} 
-                style={{ 
-                    position: 'absolute', 
-                    left: layoutCoords ? `${layoutCoords.x + 40}px` : 'auto', 
-                    top: layoutCoords ? `${layoutCoords.y}px` : '50%', 
-                    padding: '10px 20px', 
-                    backgroundColor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? COLORS.BTN_DISABLED : COLORS.BTN_PRIMARY, 
-                    color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', pointerEvents: 'auto',
-                    cursor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? 'not-allowed' : 'pointer',
-                    opacity: (isMyTurn && !isActionBlockedByMulligan) ? 1 : 0.6
-                }}
-            >
-                {isPending ? '送信中' : '終了'}
-            </button>
+            <button onClick={() => handleAction('TURN_END', {})} disabled={isPending || !isMyTurn || isActionBlockedByMulligan} style={{ position: 'absolute', left: layoutCoords ? `${layoutCoords.x + 40}px` : 'auto', top: layoutCoords ? `${layoutCoords.y}px` : '50%', padding: '10px 20px', backgroundColor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? COLORS.BTN_DISABLED : COLORS.BTN_PRIMARY, color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', pointerEvents: 'auto', cursor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? 'not-allowed' : 'pointer', opacity: (isMyTurn && !isActionBlockedByMulligan) ? 1 : 0.6 }}>{isPending ? '送信中' : '終了'}</button>
         </div>
       )}
     </div>
