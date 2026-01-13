@@ -3,12 +3,7 @@ import { moveCardLocal, toggleRestLocal, createInitialGameState } from './localL
 import { logger } from '../utils/logger';
 
 export const handleLocalAction = (state: GameState, actionType: string, params: any): GameState => {
-  logger.log({
-    level: 'info',
-    action: `local_action.${actionType}`,
-    msg: `Processing local action: ${actionType}`,
-    payload: params
-  });
+  logger.log({ level: 'info', action: `local_action.${actionType}`, msg: `Processing local action: ${actionType}`, payload: params });
 
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
 
@@ -24,22 +19,16 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
       return newState;
 
     case 'START':
-      return createInitialGameState({ leader: [], cards: [] }, { leader: [], cards: [] }, state.room_name || 'local');
+      return createInitialGameState(params.p1Deck, params.p2Deck, state.room_name || 'local');
 
     case 'MOVE_CARD':
-      return moveCardLocal(
-        state,
-        params.card_uuid,
-        params.dest_player_id as 'p1' | 'p2',
-        params.dest_zone,
-        params.index
-      );
+      return moveCardLocal(state, params.card_uuid, params.dest_player_id as 'p1' | 'p2', params.dest_zone, params.index);
 
     case 'TOGGLE_REST':
       return toggleRestLocal(state, params.card_uuid);
 
     case 'RESET':
-      return createInitialGameState({ leader: [], cards: [] }, { leader: [], cards: [] }, state.room_name || 'local-room');
+      return createInitialGameState(null, null, state.room_name || 'local-room');
 
     default:
       logger.warn('local_action.unknown', `Action ${actionType} is not implemented locally.`);

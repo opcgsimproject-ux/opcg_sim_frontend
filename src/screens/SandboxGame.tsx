@@ -414,7 +414,25 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       setIsPending(true);
       try { 
           if (isLocalMode) {
-              const nextState = handleLocalAction(gameState, type, params);
+              let localParams = { ...params };
+              if (type === 'START') {
+                  const p1Id = gameState.players.p1.name;
+                  const p2Id = gameState.players.p2.name;
+                  
+                  const getDeck = async (id: string) => {
+                      const url = id.startsWith('db:') 
+                          ? `${API_CONFIG.BASE_URL}/api/deck/get?id=${id.substring(3)}`
+                          : `${API_CONFIG.BASE_URL}/api/deck/get?id=${id}`;
+                      const res = await fetch(url);
+                      const data = await res.json();
+                      return data.deck || data;
+                  };
+                  
+                  const [d1, d2] = await Promise.all([getDeck(p1Id), getDeck(p2Id)]);
+                  localParams.p1Deck = d1;
+                  localParams.p2Deck = d2;
+              }
+              const nextState = handleLocalAction(gameState, type, localParams);
               setGameState(nextState);
           } else {
               const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId; 

@@ -4,16 +4,21 @@ import { logger } from '../utils/logger';
 
 export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: string): GameState => {
   const setupPlayer = (deck: any, playerId: string, name: string): PlayerState => {
-    const leaderData = deck.leader[0] || deck.cards.find((c: any) => (c.type || '').toUpperCase() === 'LEADER');
+    const leaderData = (deck?.leader && deck.leader[0]) || (deck?.cards && deck.cards.find((c: any) => (c.type || '').toUpperCase() === 'LEADER'));
+    
     const leader: LeaderCard = {
+      name: "Unknown Leader",
+      card_id: "LEADER",
+      power: 5000,
       ...leaderData,
       uuid: uuidv4(),
       owner_id: playerId,
       is_rest: false,
-      attached_don: 0
+      attached_don: 0,
+      type: "LEADER"
     };
 
-    const mainCards = deck.cards
+    const mainCards = (deck?.cards || [])
       .filter((c: any) => (c.type || '').toUpperCase() !== 'LEADER')
       .map((c: any) => ({
         ...c,
@@ -132,13 +137,6 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
       else zone.splice(index, 0, targetCard);
     }
   }
-
-  logger.log({ 
-    level: 'info', 
-    action: 'local.move_card', 
-    msg: `Moved ${targetCard.name} to ${destPid}.${destZone}`,
-    payload: { cardUuid, destPid, destZone }
-  });
 
   return newState;
 };
