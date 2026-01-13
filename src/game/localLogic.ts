@@ -7,7 +7,6 @@ const cloneState = (state: GameState): GameState => JSON.parse(JSON.stringify(st
 
 export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: string): GameState => {
   const setupPlayer = (deck: any, playerId: string, name: string): PlayerState => {
-    // データ取得の優先順位を整理
     const leaderRaw = (deck?.leader && Array.isArray(deck.leader) ? deck.leader[0] : deck?.leader) || 
                       (deck?.cards && deck.cards.find((c: any) => (c.type || '').toUpperCase() === 'LEADER'));
     
@@ -72,18 +71,19 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
     turn_info: { turn_count: 1, active_player_id: 'p1', current_phase: 'MAIN', winner: null }
   };
 
-  // マリガン管理用のフラグをStateに追加
   (state as any).mulligan_finished = { p1: false, p2: false };
 
-  // 1ターン目のドン追加処理 (先攻P1に1枚追加)
+  // ▼▼▼ 修正: don_deck の存在確認を追加 ▼▼▼
   const p1 = state.players.p1;
-  if (p1.zones.don_deck.length > 0) {
-    const don = p1.zones.don_deck.shift();
+  const p1DonDeck = p1.zones.don_deck;
+  if (p1DonDeck && p1DonDeck.length > 0) {
+    const don = p1DonDeck.shift();
     if (don) {
       don.is_rest = false;
       p1.don_active.push(don);
     }
   }
+  // ▲▲▲ 修正ここまで ▲▲▲
 
   logger.log({ level: 'info', action: 'local.init_game', msg: 'Local game state initialized', payload: { gameId: state.game_id } });
   return state;
@@ -95,7 +95,6 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
   let sourcePid: 'p1' | 'p2' | null = null;
   let sourceZone: string | null = null;
 
-  // 1. カードを探す
   for (const pid of ['p1', 'p2'] as const) {
     const p = newState.players[pid];
     if (p.leader?.uuid === cardUuid) { targetCard = p.leader; p.leader = null; sourcePid = pid; sourceZone = 'leader'; break; }
@@ -128,19 +127,14 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
 
   if (!targetCard || !sourcePid) return state;
 
-  // 2. 移動に伴うステータスリセット & ドン!!剥離処理
   // フィールドから離れる場合、付与されていたドンを剥がしてレストで戻す
   if (sourceZone === 'field') {
     const srcPlayer = newState.players[sourcePid];
-    // attached_to がこのカードのUUIDになっているドンを探す
     const attachedDons = srcPlayer.don_attached.filter((d: any) => d.attached_to === cardUuid);
     
     for (const don of attachedDons) {
-      // don_attached から削除
       const donIdx = srcPlayer.don_attached.indexOf(don);
       if (donIdx !== -1) srcPlayer.don_attached.splice(donIdx, 1);
-      
-      // レスト状態で don_rested に追加
       don.is_rest = true;
       (don as any).attached_to = null;
       srcPlayer.don_rested.push(don);
@@ -153,7 +147,6 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
 
   const destPlayer = newState.players[destPid];
 
-  // 3. 自動コスト支払い (手札 -> 場)
   if (sourceZone === 'hand' && destZone === 'field' && sourcePid === destPid) {
     const cost = (targetCard as any).cost || 0;
     const activeDons = destPlayer.don_active;
@@ -169,7 +162,6 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
     }
   }
 
-  // 4. 移動先への配置
   if (destZone === 'leader') { destPlayer.leader = targetCard as LeaderCard; }
   else if (destZone === 'stage') {
     if (destPlayer.stage) {
@@ -203,16 +195,15 @@ export const attachDonLocal = (state: GameState, donUuid: string, targetUuid: st
     const restedIdx = p.don_rested.findIndex(c => c.uuid === donUuid);
     if (restedIdx !== -1) { donCard = p.don_rested.splice(restedIdx, 1)[0]; ownerPid = pid; break; }
     
-    // 既に付与されているドンを付け替える場合
     const attachedIdx = p.don_attached.findIndex(c => c.uuid === donUuid);
     if (attachedIdx !== -1) { 
       donCard = p.don_attached.splice(attachedIdx, 1)[0]; 
       ownerPid = pid;
       
-      // 元の付与先から attached_don カウントを減らす
       const oldTargetUuid = (donCard as any).attached_to;
       if (oldTargetUuid) {
-        if (p.leader?.uuid === oldTargetUuid) {
+        // ▼▼▼ 修正: leader の存在確認と型ガードを強化 ▼▼▼
+        if (p.leader && p.leader.uuid === oldTargetUuid) {
           p.leader.attached_don = Math.max(0, (p.leader.attached_don || 0) - 1);
         } else {
           const oldTarget = p.zones.field.find(c => c.uuid === oldTargetUuid);
@@ -220,6 +211,7 @@ export const attachDonLocal = (state: GameState, donUuid: string, targetUuid: st
             oldTarget.attached_don = Math.max(0, (oldTarget.attached_don || 0) - 1);
           }
         }
+        // ▲▲▲ 修正ここまで ▲▲▲
       }
       break; 
     }
@@ -277,29 +269,23 @@ export const toggleRestLocal = (state: GameState, cardUuid: string): GameState =
 
 export const resolveTurnEndLocal = (state: GameState): GameState => {
   const newState = cloneState(state);
-  
-  // 1. ターン情報を更新
   const nextPid = newState.turn_info.active_player_id === 'p1' ? 'p2' : 'p1';
   newState.turn_info.active_player_id = nextPid;
   newState.turn_info.turn_count += 1;
-  const currentTurn = newState.turn_info.turn_count; // 更新後のターン数
+  const currentTurn = newState.turn_info.turn_count;
 
   const nextPlayer = newState.players[nextPid];
 
-  // 2. リフレッシュフェーズ
   if (nextPlayer.leader) { nextPlayer.leader.is_rest = false; nextPlayer.leader.attached_don = 0; }
   if (nextPlayer.stage) { nextPlayer.stage.is_rest = false; }
   nextPlayer.zones.field.forEach(c => { c.is_rest = false; c.attached_don = 0; });
 
-  // ドン!!返還（付与されていたドンも戻る）
   nextPlayer.don_active.push(...nextPlayer.don_rested);
   nextPlayer.don_rested = [];
   nextPlayer.don_active.push(...nextPlayer.don_attached);
   nextPlayer.don_attached = [];
   nextPlayer.don_active.forEach(d => { d.is_rest = false; (d as any).attached_to = null; });
 
-  // 3. ドローフェーズ
-  // ルール: 先攻1ターン目(turn=1)はドローなし。それ以外はドロー。
   if (currentTurn > 1) {
     const deck = nextPlayer.zones.deck || [];
     if (deck.length > 0) {
@@ -309,8 +295,6 @@ export const resolveTurnEndLocal = (state: GameState): GameState => {
     }
   }
 
-  // 4. ドン!!追加フェーズ
-  // ルール: 先攻1ターン目(turn=1)は1枚。それ以外は2枚。最大10枚まで。
   const currentDonCount = nextPlayer.don_active.length;
   const donToAddAmount = currentTurn === 1 ? 1 : 2;
   const donToAdd = Math.min(donToAddAmount, 10 - currentDonCount);
