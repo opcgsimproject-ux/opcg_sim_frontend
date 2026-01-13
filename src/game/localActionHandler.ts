@@ -1,5 +1,5 @@
 import type { GameState } from './types';
-import { moveCardLocal, toggleRestLocal, createInitialGameState } from './localLogic';
+import { moveCardLocal, toggleRestLocal, createInitialGameState, resolveTurnEndLocal } from './localLogic';
 import { logger } from '../utils/logger';
 
 export const handleLocalAction = (state: GameState, actionType: string, params: any): GameState => {
@@ -24,7 +24,6 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
       return newState;
 
     case 'START':
-      // SandboxGame.tsx から渡されたデッキデータを使用して初期化
       return createInitialGameState(params.p1Deck, params.p2Deck, state.room_name || 'local');
 
     case 'MOVE_CARD':
@@ -39,9 +38,11 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
     case 'TOGGLE_REST':
       return toggleRestLocal(state, params.card_uuid);
 
+    case 'TURN_END':
+      return resolveTurnEndLocal(state);
+
     case 'RESET':
-      // リセット時は現在のプレイヤー名を維持しつつ空データで初期化
-      return createInitialGameState({ leader: [], cards: [] }, { leader: [], cards: [] }, state.room_name || 'local-room');
+      return createInitialGameState(null, null, state.room_name || 'local-room');
 
     default:
       logger.warn('local_action.unknown', `Action ${actionType} is not implemented locally.`);
