@@ -24,10 +24,6 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
       return newState;
 
     case 'START':
-      const p1DeckId = newState.players.p1.name;
-      const p2DeckId = newState.players.p2.name;
-      // 注意: 本来はここでデッキデータをfetchする必要があります
-      // 今回は既存の初期化処理を流用します
       return createInitialGameState({ leader: [], cards: [] }, { leader: [], cards: [] }, state.room_name || 'local');
 
     case 'MOVE_CARD':
