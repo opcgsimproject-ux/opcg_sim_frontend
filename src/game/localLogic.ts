@@ -7,6 +7,7 @@ const cloneState = (state: GameState): GameState => JSON.parse(JSON.stringify(st
 
 export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: string): GameState => {
   const setupPlayer = (deck: any, playerId: string, name: string): PlayerState => {
+    // データ取得の優先順位を整理
     const leaderRaw = (deck?.leader && Array.isArray(deck.leader) ? deck.leader[0] : deck?.leader) || 
                       (deck?.cards && deck.cards.find((c: any) => (c.type || '').toUpperCase() === 'LEADER'));
     
@@ -83,8 +84,9 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
 
   // 1ターン目のドン追加処理
   const p1 = state.players.p1;
-  if (p1.zones.don_deck && p1.zones.don_deck.length > 0) {
-    const don = p1.zones.don_deck.shift();
+  const p1DonDeck = p1.zones.don_deck;
+  if (p1DonDeck && p1DonDeck.length > 0) {
+    const don = p1DonDeck.shift();
     if (don) {
       don.is_rest = false;
       don.is_face_up = true;
@@ -105,7 +107,7 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
   // 1. カードを探す
   for (const pid of ['p1', 'p2'] as const) {
     const p = newState.players[pid];
-    // リーダーの移動は禁止 (Sandbox仕様)
+    // リーダーの移動は禁止
     if (p.leader?.uuid === cardUuid) { 
       logger.warn('local.move_blocked', 'Leader cannot be moved');
       return state; 
@@ -139,7 +141,7 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
 
   if (!targetCard || !sourcePid) return state;
 
-  // 相手エリアへの移動禁止 (Sandbox仕様)
+  // 相手エリアへの移動禁止
   if (sourcePid !== destPid) {
     logger.warn('local.move_blocked', 'Cannot move card to opponent\'s area');
     return state;
@@ -217,7 +219,7 @@ export const resetGameLocal = (state: GameState): GameState => {
   for (const pid of ['p1', 'p2'] as const) {
     const p = newState.players[pid];
     
-    // 1. 全カード回収 (場、手札、ライフ、トラッシュ、ステージ)
+    // 1. 全カード回収
     const allCards: CardInstance[] = [];
     allCards.push(...p.zones.hand); p.zones.hand = [];
     allCards.push(...p.zones.field); p.zones.field = [];
@@ -230,7 +232,7 @@ export const resetGameLocal = (state: GameState): GameState => {
     allCards.forEach(c => {
       c.is_rest = false;
       c.attached_don = 0;
-      c.is_face_up = false; // デッキに戻すので裏向き
+      c.is_face_up = false;
     });
 
     // 2. ドン回収
@@ -256,21 +258,17 @@ export const resetGameLocal = (state: GameState): GameState => {
     // 4. デッキシャッフル & 再配置
     allCards.sort(() => Math.random() - 0.5);
     
-    // ライフ配置
     const lifeCount = p.leader?.life || 5;
     p.zones.life = allCards.splice(0, lifeCount);
-    
-    // 手札配置
     p.zones.hand = allCards.splice(0, 5).map(c => ({ ...c, is_face_up: true }));
-    
-    // 残りデッキ
     p.zones.deck = allCards;
   }
 
   // 1ターン目のドン追加 (P1のみ)
   const p1 = newState.players.p1;
-  if (p1.zones.don_deck && p1.zones.don_deck.length > 0) {
-    const don = p1.zones.don_deck.shift();
+  const p1DonDeck = p1.zones.don_deck;
+  if (p1DonDeck && p1DonDeck.length > 0) {
+    const don = p1DonDeck.shift();
     if (don) {
       don.is_rest = false;
       don.is_face_up = true;
@@ -282,7 +280,6 @@ export const resetGameLocal = (state: GameState): GameState => {
   return newState;
 };
 
-// ... attachDonLocal, toggleRestLocal, resolveTurnEndLocal, mulliganLocal, finishMulliganLocal, drawCardLocal, shuffleDeckLocal は変更なし (前回の内容を維持)
 export const attachDonLocal = (state: GameState, donUuid: string, targetUuid: string): GameState => {
   const newState = cloneState(state);
   let donCard: CardInstance | null = null;
@@ -299,19 +296,39 @@ export const attachDonLocal = (state: GameState, donUuid: string, targetUuid: st
       donCard = p.don_attached.splice(attachedIdx, 1)[0]; ownerPid = pid;
       const oldTargetUuid = (donCard as any).attached_to;
       if (oldTargetUuid) {
-        if (p.leader && p.leader.uuid === oldTargetUuid) { p.leader.attached_don = Math.max(0, (p.leader.attached_don || 0) - 1); }
-        else { const oldTarget = p.zones.field.find(c => c.uuid === oldTargetUuid); if (oldTarget) { oldTarget.attached_don = Math.max(0, (oldTarget.attached_don || 0) - 1); } }
+        if (p.leader && p.leader.uuid === oldTargetUuid) { 
+          p.leader.attached_don = Math.max(0, (p.leader.attached_don || 0) - 1); 
+        } else { 
+          const oldTarget = p.zones.field.find(c => c.uuid === oldTargetUuid); 
+          if (oldTarget) { oldTarget.attached_don = Math.max(0, (oldTarget.attached_don || 0) - 1); } 
+        }
       }
       break; 
     }
   }
   if (!donCard || !ownerPid) return state;
+  
   const player = newState.players[ownerPid];
   let targetFound = false;
-  if (player.leader?.uuid === targetUuid) { player.leader.attached_don = (player.leader.attached_don || 0) + 1; targetFound = true; } 
-  else { const fieldTarget = player.zones.field.find(c => c.uuid === targetUuid); if (fieldTarget) { fieldTarget.attached_don = (fieldTarget.attached_don || 0) + 1; targetFound = true; } }
-  if (targetFound) { donCard.is_rest = false; (donCard as any).attached_to = targetUuid; player.don_attached.push(donCard); } 
-  else { player.don_active.push(donCard); }
+  
+  if (player.leader && player.leader.uuid === targetUuid) { 
+    player.leader.attached_don = (player.leader.attached_don || 0) + 1; 
+    targetFound = true; 
+  } else { 
+    const fieldTarget = player.zones.field.find(c => c.uuid === targetUuid); 
+    if (fieldTarget) { 
+      fieldTarget.attached_don = (fieldTarget.attached_don || 0) + 1; 
+      targetFound = true; 
+    } 
+  }
+  
+  if (targetFound) { 
+    donCard.is_rest = false; 
+    (donCard as any).attached_to = targetUuid; 
+    player.don_attached.push(donCard); 
+  } else { 
+    player.don_active.push(donCard); 
+  }
   return newState;
 };
 
@@ -338,18 +355,39 @@ export const resolveTurnEndLocal = (state: GameState): GameState => {
   newState.turn_info.turn_count += 1;
   const currentTurn = newState.turn_info.turn_count;
   const nextPlayer = newState.players[nextPid];
+  
   if (nextPlayer.leader) { nextPlayer.leader.is_rest = false; nextPlayer.leader.attached_don = 0; }
   if (nextPlayer.stage) { nextPlayer.stage.is_rest = false; }
   nextPlayer.zones.field.forEach(c => { c.is_rest = false; c.attached_don = 0; });
+  
   nextPlayer.don_active.push(...nextPlayer.don_rested); nextPlayer.don_rested = [];
   nextPlayer.don_active.push(...nextPlayer.don_attached); nextPlayer.don_attached = [];
   nextPlayer.don_active.forEach(d => { d.is_rest = false; (d as any).attached_to = null; });
-  if (currentTurn > 1) { const deck = nextPlayer.zones.deck || []; if (deck.length > 0) { const card = deck.shift(); if (card) { card.is_face_up = true; nextPlayer.zones.hand.push(card); } nextPlayer.zones.deck = deck; } }
+  
+  if (currentTurn > 1) { 
+    const deck = nextPlayer.zones.deck || []; 
+    if (deck.length > 0) { 
+      const card = deck.shift(); 
+      if (card) { card.is_face_up = true; nextPlayer.zones.hand.push(card); } 
+      nextPlayer.zones.deck = deck; 
+    } 
+  }
+  
   const currentDonCount = nextPlayer.don_active.length;
   const donToAddAmount = currentTurn === 1 ? 1 : 2;
   const donToAdd = Math.min(donToAddAmount, 10 - currentDonCount);
   const donDeck = nextPlayer.zones.don_deck || [];
-  if (donToAdd > 0 && donDeck.length > 0) { for (let i = 0; i < donToAdd; i++) { if (donDeck.length > 0) { const don = donDeck.shift(); if (don) { don.is_rest = false; don.is_face_up = true; nextPlayer.don_active.push(don); } } } nextPlayer.zones.don_deck = donDeck; }
+  
+  if (donToAdd > 0 && donDeck.length > 0) { 
+    for (let i = 0; i < donToAdd; i++) { 
+      if (donDeck.length > 0) { 
+        const don = donDeck.shift(); 
+        if (don) { don.is_rest = false; don.is_face_up = true; nextPlayer.don_active.push(don); } 
+      } 
+    } 
+    nextPlayer.zones.don_deck = donDeck; 
+  }
+  
   newState.turn_info.current_phase = 'MAIN';
   logger.log({ level: 'info', action: 'local.turn_end', msg: `Turn passed to ${nextPid}`, payload: { turn: currentTurn } });
   return newState;
@@ -360,11 +398,18 @@ export const mulliganLocal = (state: GameState, playerId: string): GameState => 
   const player = newState.players[playerId as 'p1' | 'p2'];
   if (!player.zones.deck) { player.zones.deck = []; }
   const deck = player.zones.deck;
+  
   player.zones.hand.forEach(c => c.is_face_up = false);
   deck.push(...player.zones.hand);
   player.zones.hand = [];
+  
   deck.sort(() => Math.random() - 0.5);
-  for (let i = 0; i < 5; i++) { const card = deck.shift(); if (card) { card.is_face_up = true; player.zones.hand.push(card); } }
+  
+  for (let i = 0; i < 5; i++) { 
+    const card = deck.shift(); 
+    if (card) { card.is_face_up = true; player.zones.hand.push(card); } 
+  }
+  
   logger.log({ level: 'info', action: 'local.mulligan', msg: `Mulligan executed for ${playerId}` });
   return newState;
 };
@@ -381,13 +426,21 @@ export const drawCardLocal = (state: GameState, playerId: string): GameState => 
   const newState = cloneState(state);
   const player = newState.players[playerId as 'p1' | 'p2'];
   const deck = player.zones.deck || [];
-  if (deck.length > 0) { const card = deck.shift(); if (card) { card.is_face_up = true; player.zones.hand.push(card); } player.zones.deck = deck; logger.log({ level: 'info', action: 'local.draw', msg: `${playerId} manually drew a card` }); }
+  if (deck.length > 0) { 
+    const card = deck.shift(); 
+    if (card) { card.is_face_up = true; player.zones.hand.push(card); } 
+    player.zones.deck = deck; 
+    logger.log({ level: 'info', action: 'local.draw', msg: `${playerId} manually drew a card` }); 
+  }
   return newState;
 };
 
 export const shuffleDeckLocal = (state: GameState, playerId: string): GameState => {
   const newState = cloneState(state);
   const player = newState.players[playerId as 'p1' | 'p2'];
-  if (player.zones.deck) { player.zones.deck.sort(() => Math.random() - 0.5); logger.log({ level: 'info', action: 'local.shuffle', msg: `${playerId} shuffled deck` }); }
+  if (player.zones.deck) { 
+    player.zones.deck.sort(() => Math.random() - 0.5); 
+    logger.log({ level: 'info', action: 'local.shuffle', msg: `${playerId} shuffled deck` }); 
+  }
   return newState;
 };

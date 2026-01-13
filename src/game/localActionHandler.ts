@@ -9,7 +9,7 @@ import {
   finishMulliganLocal,
   drawCardLocal,
   shuffleDeckLocal,
-  resetGameLocal // 追加
+  resetGameLocal 
 } from './localLogic';
 import { logger } from '../utils/logger';
 
@@ -70,7 +70,6 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
       return shuffleDeckLocal(state, params.player_id);
 
     case 'RESET':
-      // 修正: resetGameLocal を使用して、デッキを再利用する
       return resetGameLocal(state);
 
     default:
