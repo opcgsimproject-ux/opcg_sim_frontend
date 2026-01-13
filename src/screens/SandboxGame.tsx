@@ -11,6 +11,7 @@ import { apiClient } from '../api/client';
 import type { GameState, CardInstance } from '../game/types';
 import { API_CONFIG } from '../api/api.config';
 import { logger } from '../utils/logger';
+import { handleLocalAction } from '../game/localActionHandler';
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
@@ -37,6 +38,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
   const longPressTimerRef = useRef<any>(null);
   const pressStartPosRef = useRef<{x: number, y: number} | null>(null);
+
+  const isLocalMode = useMemo(() => myPlayerId === 'both', [myPlayerId]);
 
   const dragStateRef = useRef(dragState);
   useEffect(() => { dragStateRef.current = dragState; }, [dragState]);
@@ -116,6 +119,21 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   }, []);
 
   useEffect(() => {
+    if (isLocalMode) {
+      setGameState({
+        game_id: 'local',
+        room_name: roomName || 'LOCAL',
+        status: 'WAITING',
+        players: {
+          p1: { player_id: 'p1', name: 'Player 1', leader: null, zones: { field: [], hand: [], life: [], trash: [] }, don_count: 0, active_don: 0, don_active: [], don_rested: [], don_attached: [] },
+          p2: { player_id: 'p2', name: 'Player 2', leader: null, zones: { field: [], hand: [], life: [], trash: [] }, don_count: 0, active_don: 0, don_active: [], don_rested: [], don_attached: [] }
+        },
+        turn_info: { turn_count: 1, active_player_id: 'p1', current_phase: 'MAIN', winner: null },
+        ready_states: { p1: false, p2: false }
+      });
+      return;
+    }
+
     let ws: WebSocket | null = null;
     const initGame = async () => {
       try {
@@ -142,7 +160,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     };
     initGame();
     return () => { if (ws) ws.close(); };
-  }, []);
+  }, [isLocalMode]);
 
   useEffect(() => {
     if (!pixiContainerRef.current || (gameState && gameState.status === 'WAITING')) return;
@@ -390,9 +408,19 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   }, [dragState, gameState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
 
   const handleAction = async (type: string, params: any) => {
-      if (isPending || !gameState || !activeGameId) return;
+      if (isPending || !gameState) return;
       setIsPending(true);
-      try { const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId; const res = await apiClient.sendSandboxAction(activeGameId, { action_type: type, player_id: pid, ...params }); setGameState(res.state); } catch(e) { logger.error('sandbox.action_fail', String(e)); } finally { setIsPending(false); }
+      try { 
+          if (isLocalMode) {
+              const nextState = handleLocalAction(gameState, type, params);
+              setGameState(nextState);
+          } else {
+              if (!activeGameId) return;
+              const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId;
+              const res = await apiClient.sendSandboxAction(activeGameId, { action_type: type, player_id: pid, ...params }); 
+              setGameState(res.state); 
+          }
+      } catch(e) { logger.error('sandbox.action_fail', String(e)); } finally { setIsPending(false); }
   };
 
   if (gameState && gameState.status === 'WAITING') {
