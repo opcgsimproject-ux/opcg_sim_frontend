@@ -158,7 +158,10 @@ const CardDetailScreen = ({ card, currentCount, onCountChange, onClose, onNaviga
   );
 };
 
-const FilterModal = ({ filters, setFilters, traitList, setList, onClose, onReset }: { filters: FilterState, setFilters: (f: FilterState) => void, traitList: string[], setList: string[], onClose: () => void, onReset: () => void }) => {
+// ▼ 修正: initialFiltersとonApplyを受け取るように変更
+const FilterModal = ({ initialFilters, onApply, traitList, setList, onClose }: { initialFilters: FilterState, onApply: (f: FilterState) => void, traitList: string[], setList: string[], onClose: () => void }) => {
+  // ▼ 追加: ローカル状態管理
+  const [localFilters, setLocalFilters] = useState<FilterState>(initialFilters);
   const [traitSearch, setTraitSearch] = useState('');
 
   const SectionTitle = ({ children, onSelectAll }: { children: string, onSelectAll?: () => void }) => (
@@ -176,11 +179,17 @@ const FilterModal = ({ filters, setFilters, traitList, setList, onClose, onReset
   );
 
   const toggle = (key: keyof FilterState, value: string) => {
-    const current = filters[key];
+    const current = localFilters[key]; // localFiltersを参照
     if (Array.isArray(current)) {
       const newArray = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
-      setFilters({ ...filters, [key]: newArray });
+      setLocalFilters({ ...localFilters, [key]: newArray }); // setLocalFiltersを更新
     }
+  };
+
+  const handleReset = () => {
+    setLocalFilters({ 
+      color: [], type: [], attribute: [], traits: [], counter: [], cost: [], power: [], trigger: [], sets: [], sort: 'COST' 
+    });
   };
 
   const FilterBtn = ({ label, active, onClick, color }: { label: string, active: boolean, onClick: () => void, color?: string }) => (
@@ -203,7 +212,7 @@ const FilterModal = ({ filters, setFilters, traitList, setList, onClose, onReset
   );
 
   const ColorBtn = ({ colorKey, label, colorCode }: { colorKey: string, label: string, colorCode: string }) => {
-    const isActive = filters.color.includes(colorKey);
+    const isActive = localFilters.color.includes(colorKey); // localFiltersを参照
     return (
       <div 
         title={label}
@@ -215,7 +224,7 @@ const FilterModal = ({ filters, setFilters, traitList, setList, onClose, onReset
           boxShadow: isActive ? '0 0 10px white' : 'none',
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'black', fontWeight: 'bold', fontSize: '10px',
-          opacity: (filters.color.length === 0 || isActive) ? 1 : 0.4
+          opacity: (localFilters.color.length === 0 || isActive) ? 1 : 0.4
         }}
       >
         {isActive && "✓"}
@@ -238,7 +247,7 @@ const FilterModal = ({ filters, setFilters, traitList, setList, onClose, onReset
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
-          <SectionTitle onSelectAll={() => setFilters({...filters, color: ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow']})}>色 (COLOR)</SectionTitle>
+          <SectionTitle onSelectAll={() => setLocalFilters({...localFilters, color: ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow']})}>色 (COLOR)</SectionTitle>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <ColorBtn colorKey="Red" label="赤" colorCode="#e74c3c" />
             <ColorBtn colorKey="Green" label="緑" colorCode="#27ae60" />
@@ -248,52 +257,52 @@ const FilterModal = ({ filters, setFilters, traitList, setList, onClose, onReset
             <ColorBtn colorKey="Yellow" label="黄" colorCode="#f1c40f" />
           </div>
 
-          <SectionTitle onSelectAll={() => setFilters({...filters, cost: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']})}>コスト (COST)</SectionTitle>
+          <SectionTitle onSelectAll={() => setLocalFilters({...localFilters, cost: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']})}>コスト (COST)</SectionTitle>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {[...Array(10)].map((_, i) => (
-              <FilterBtn key={i} label={`${i+1}`} active={filters.cost.includes(`${i+1}`)} onClick={() => toggle('cost', `${i+1}`)} />
+              <FilterBtn key={i} label={`${i+1}`} active={localFilters.cost.includes(`${i+1}`)} onClick={() => toggle('cost', `${i+1}`)} />
             ))}
-            <FilterBtn label="10+" active={filters.cost.includes('10')} onClick={() => toggle('cost', '10')} />
+            <FilterBtn label="10+" active={localFilters.cost.includes('10')} onClick={() => toggle('cost', '10')} />
           </div>
 
-          <SectionTitle onSelectAll={() => setFilters({...filters, power: [...Array(14)].map((_, i) => i.toString())})}>パワー (POWER)</SectionTitle>
+          <SectionTitle onSelectAll={() => setLocalFilters({...localFilters, power: [...Array(14)].map((_, i) => i.toString())})}>パワー (POWER)</SectionTitle>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {[...Array(13)].map((_, i) => (
-              <FilterBtn key={i} label={`${i}`} active={filters.power.includes(`${i}`)} onClick={() => toggle('power', `${i}`)} />
+              <FilterBtn key={i} label={`${i}`} active={localFilters.power.includes(`${i}`)} onClick={() => toggle('power', `${i}`)} />
             ))}
-            <FilterBtn label="13~" active={filters.power.includes('13')} onClick={() => toggle('power', '13')} />
+            <FilterBtn label="13~" active={localFilters.power.includes('13')} onClick={() => toggle('power', '13')} />
           </div>
 
-          <SectionTitle onSelectAll={() => setFilters({...filters, sets: setList})}>収録セット (SET)</SectionTitle>
+          <SectionTitle onSelectAll={() => setLocalFilters({...localFilters, sets: setList})}>収録セット (SET)</SectionTitle>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {setList.map(s => (
-              <FilterBtn key={s} label={s} active={filters.sets.includes(s)} onClick={() => toggle('sets', s)} />
+              <FilterBtn key={s} label={s} active={localFilters.sets.includes(s)} onClick={() => toggle('sets', s)} />
             ))}
           </div>
 
-          <SectionTitle onSelectAll={() => setFilters({...filters, type: ['LEADER', 'CHARACTER', 'EVENT', 'STAGE']})}>種類 (TYPE)</SectionTitle>
+          <SectionTitle onSelectAll={() => setLocalFilters({...localFilters, type: ['LEADER', 'CHARACTER', 'EVENT', 'STAGE']})}>種類 (TYPE)</SectionTitle>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <FilterBtn label="リーダー" active={filters.type.includes('LEADER')} onClick={() => toggle('type', 'LEADER')} />
-            <FilterBtn label="キャラ" active={filters.type.includes('CHARACTER')} onClick={() => toggle('type', 'CHARACTER')} />
-            <FilterBtn label="イベント" active={filters.type.includes('EVENT')} onClick={() => toggle('type', 'EVENT')} />
-            <FilterBtn label="ステージ" active={filters.type.includes('STAGE')} onClick={() => toggle('type', 'STAGE')} />
+            <FilterBtn label="リーダー" active={localFilters.type.includes('LEADER')} onClick={() => toggle('type', 'LEADER')} />
+            <FilterBtn label="キャラ" active={localFilters.type.includes('CHARACTER')} onClick={() => toggle('type', 'CHARACTER')} />
+            <FilterBtn label="イベント" active={localFilters.type.includes('EVENT')} onClick={() => toggle('type', 'EVENT')} />
+            <FilterBtn label="ステージ" active={localFilters.type.includes('STAGE')} onClick={() => toggle('type', 'STAGE')} />
           </div>
 
-          <SectionTitle onSelectAll={() => setFilters({...filters, counter: ['NONE', '1000', '2000']})}>カウンター (COUNTER)</SectionTitle>
+          <SectionTitle onSelectAll={() => setLocalFilters({...localFilters, counter: ['NONE', '1000', '2000']})}>カウンター (COUNTER)</SectionTitle>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <FilterBtn label="なし" active={filters.counter.includes('NONE')} onClick={() => toggle('counter', 'NONE')} />
-            <FilterBtn label="+1000" active={filters.counter.includes('1000')} onClick={() => toggle('counter', '1000')} />
-            <FilterBtn label="+2000" active={filters.counter.includes('2000')} onClick={() => toggle('counter', '2000')} />
+            <FilterBtn label="なし" active={localFilters.counter.includes('NONE')} onClick={() => toggle('counter', 'NONE')} />
+            <FilterBtn label="+1000" active={localFilters.counter.includes('1000')} onClick={() => toggle('counter', '1000')} />
+            <FilterBtn label="+2000" active={localFilters.counter.includes('2000')} onClick={() => toggle('counter', '2000')} />
           </div>
 
-          <SectionTitle onSelectAll={() => setFilters({...filters, attribute: ['打', '斬', '特', '射', '知']})}>属性 (ATTRIBUTE)</SectionTitle>
+          <SectionTitle onSelectAll={() => setLocalFilters({...localFilters, attribute: ['打', '斬', '特', '射', '知']})}>属性 (ATTRIBUTE)</SectionTitle>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {['打', '斬', '特', '射', '知'].map(attr => (
-              <FilterBtn key={attr} label={attr} active={filters.attribute.includes(attr)} onClick={() => toggle('attribute', attr)} />
+              <FilterBtn key={attr} label={attr} active={localFilters.attribute.includes(attr)} onClick={() => toggle('attribute', attr)} />
             ))}
           </div>
 
-          <SectionTitle onSelectAll={() => setFilters({...filters, traits: filteredTraits})}>特徴 (TRAITS)</SectionTitle>
+          <SectionTitle onSelectAll={() => setLocalFilters({...localFilters, traits: filteredTraits})}>特徴 (TRAITS)</SectionTitle>
           <input 
             placeholder="特徴を検索..." 
             value={traitSearch} 
@@ -302,7 +311,7 @@ const FilterModal = ({ filters, setFilters, traitList, setList, onClose, onReset
           />
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', maxHeight: '200px', overflowY: 'auto', padding: '5px', border: '1px solid #444', borderRadius: '4px' }}>
             {filteredTraits.map(t => (
-              <FilterBtn key={t} label={t} active={filters.traits.includes(t)} onClick={() => toggle('traits', t)} />
+              <FilterBtn key={t} label={t} active={localFilters.traits.includes(t)} onClick={() => toggle('traits', t)} />
             ))}
             {filteredTraits.length === 0 && <div style={{ fontSize: '12px', color: '#666' }}>見つかりません</div>}
           </div>
@@ -316,8 +325,10 @@ const FilterModal = ({ filters, setFilters, traitList, setList, onClose, onReset
           background: '#2a2a2a',
           zIndex: 10
         }}>
-          <button onClick={onReset} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #555', background: '#333', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}>リセット</button>
-          <button onClick={onClose} style={{ flex: 2, padding: '12px', borderRadius: '8px', border: 'none', background: '#e74c3c', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>決定</button>
+          {/* ▼ 修正: ローカル状態をリセット */}
+          <button onClick={handleReset} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #555', background: '#333', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}>リセット</button>
+          {/* ▼ 修正: 決定時に親へ通知 */}
+          <button onClick={() => onApply(localFilters)} style={{ flex: 2, padding: '12px', borderRadius: '8px', border: 'none', background: '#e74c3c', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>決定</button>
         </div>
       </div>
     </div>
@@ -618,7 +629,7 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
         borderTop: '1px solid #444', 
         display: 'flex', 
         gap: '12px', 
-        alignItems: 'center', 
+        alignItems: 'center',
         zIndex: 10
       }}>
         <button onClick={onClose} style={{ padding: '10px 16px', background: '#555', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', flexShrink: 0, cursor: 'pointer' }}>
@@ -666,12 +677,14 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
       )}
       {showFilterModal && (
         <FilterModal 
-          filters={filters} 
-          setFilters={setFilters} 
+          initialFilters={filters} 
+          onApply={(newFilters) => { 
+             setFilters(newFilters);
+             setShowFilterModal(false); 
+          }}
           traitList={traitList} 
           setList={setList} 
           onClose={() => setShowFilterModal(false)} 
-          onReset={() => setFilters({ color: [], type: [], attribute: [], traits: [], counter: [], cost: [], power: [], trigger: [], sets: [], sort: 'COST' })} 
         />
       )}
     </div>
@@ -718,7 +731,7 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
         try {
           const dRes = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
           const dData = await dRes.json();
-          // ▼ 修正: JSON由来のデフォルトデッキを除外
+          // ▼ 修正: JSON由来のデフォルトデッキ(.json)を除外
           if (dData.success && Array.isArray(dData.decks)) {
              serverDecks = dData.decks.filter((d: DeckData) => !d.id || !d.id.endsWith('.json'));
           }
