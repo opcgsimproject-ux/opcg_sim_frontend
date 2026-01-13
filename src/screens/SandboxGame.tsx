@@ -111,15 +111,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
         const data = await res.json();
         if (data.success) {
-          setDeckOptions([
-            { id: 'imu.json', name: 'Imu (Default)' }, 
-            { id: 'nami.json', name: 'Nami (Default)' }, 
-            ...data.decks.map((d: any) => ({ id: `db:${d.id}`, name: d.name }))
-          ]);
+          setDeckOptions([{ id: 'imu.json', name: 'Imu (Default)' }, { id: 'nami.json', name: 'Nami (Default)' }, ...data.decks.map((d: any) => ({ id: `db:${d.id}`, name: d.name }))]);
         }
-      } catch(e) { 
-        logger.error('sandbox.fetch_decks_fail', String(e));
-      }
+      } catch(e) { console.error(e); }
     };
     fetchDecks();
   }, []);
@@ -132,6 +126,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         status: 'WAITING',
         ready_states: { p1: false, p2: false },
         players: {
+          // デフォルトデッキを設定しておく（ユーザーが選択しなくても動くように）
           p1: { name: 'imu.json', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
           p2: { name: 'nami.json', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
         },
@@ -426,7 +421,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                   const p1DeckId = gameState.players.p1.name;
                   const p2DeckId = gameState.players.p2.name;
                   
+                  // 新しいAPIエンドポイントからデッキデータを取得
                   const getDeckData = async (deckId: string) => {
+                      // IDが空の場合は空デッキを返す
                       if (!deckId || deckId === 'p1' || deckId === 'p2') {
                         logger.warn('local.start', 'Deck ID not selected, using fallback');
                         return { leader: [], cards: [] };
@@ -436,9 +433,12 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                           : `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`;
                       
                       logger.log({ level: 'info', action: 'local.fetch_deck', msg: `Fetching deck: ${deckId}` });
+                      
                       const res = await fetch(url);
                       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                       const data = await res.json();
+                      
+                      // APIレスポンスの deck プロパティを返す
                       return data.deck || data;
                   };
                   
