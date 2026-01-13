@@ -2,10 +2,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type { GameState, CardInstance, PlayerState, LeaderCard, BoardCard } from './types';
 import { logger } from '../utils/logger';
 
-// ヘルパー: ステートのディープコピー
 const cloneState = (state: GameState): GameState => JSON.parse(JSON.stringify(state));
 
-// ヘルパー: プレイヤーのカウンタ数値を再計算して更新
 const updatePlayerCounts = (player: PlayerState) => {
   player.don_deck_count = player.zones.don_deck ? player.zones.don_deck.length : 0;
   player.don_count = player.don_active.length + player.don_rested.length + player.don_attached.length;
@@ -14,10 +12,9 @@ const updatePlayerCounts = (player: PlayerState) => {
 
 export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: string): GameState => {
   const setupPlayer = (deck: any, playerId: string, name: string): PlayerState => {
-    // データ取得の優先順位を整理
     const leaderRaw = (deck?.leader && Array.isArray(deck.leader) ? deck.leader[0] : deck?.leader) || 
                       (deck?.cards && deck.cards.find((c: any) => (c.type || '').toUpperCase() === 'LEADER')) ||
-                      null; // リーダーがない場合はnull許容
+                      null;
     
     let leader: LeaderCard | null = null;
     if (leaderRaw) {
@@ -43,17 +40,14 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
         owner_id: playerId,
         is_rest: false,
         attached_don: 0,
-        is_face_up: false // デッキ内は裏向き
+        is_face_up: false
       }));
 
     const shuffled = [...mainCards].sort(() => Math.random() - 0.5);
 
-    // 初期手札5枚（表向きにする）
     const hand = shuffled.slice(0, 5).map(c => ({ ...c, is_face_up: true }));
-    // ライフ（リーダーのライフ参照、なければ5）
     const lifeCount = leader?.life || 5;
     const life = shuffled.slice(5, 5 + lifeCount);
-    // デッキ（裏向きのまま）
     const deckCards = shuffled.slice(5 + lifeCount);
 
     const playerState: PlayerState = {
@@ -96,7 +90,6 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
 
   (state as any).mulligan_finished = { p1: false, p2: false };
 
-  // 1ターン目のドン追加処理
   const p1 = state.players.p1;
   const p1DonDeck = p1.zones.don_deck;
   if (p1DonDeck && p1DonDeck.length > 0) {
@@ -105,7 +98,7 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       don.is_rest = false;
       don.is_face_up = true;
       p1.don_active.push(don);
-      updatePlayerCounts(p1); // カウンタ更新
+      updatePlayerCounts(p1);
     }
   }
 
@@ -119,7 +112,6 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
   let sourcePid: 'p1' | 'p2' | null = null;
   let sourceZone: string | null = null;
 
-  // 1. カードを探す
   for (const pid of ['p1', 'p2'] as const) {
     const p = newState.players[pid];
     if (p.leader?.uuid === cardUuid) { targetCard = p.leader; p.leader = null; sourcePid = pid; sourceZone = 'leader'; break; }
@@ -152,32 +144,25 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
 
   if (!targetCard || !sourcePid) return state;
 
-  // 移動制限チェック
-  const isDon = targetCard.type === 'DON' || targetCard.type === 'DON!!';
+  const isDon = targetCard.type === 'DON' || targetCard.type === 'ドン!!';
   const isLeader = targetCard.type === 'LEADER' || targetCard.type === 'リーダー';
 
-  // 相手エリアへの移動禁止
   if (sourcePid !== destPid) {
     logger.warn('local.move_blocked', 'Cannot move card to opponent\'s area');
     return state;
   }
 
-  // ゾーンごとの配置制限
   if (destZone === 'leader') {
     if (!isLeader) { logger.warn('local.move_blocked', 'Only Leader can be placed in Leader zone'); return state; }
   } else if (['don_active', 'don_rested', 'don_deck'].includes(destZone)) {
     if (!isDon) { logger.warn('local.move_blocked', 'Only Don!! can be placed in Don zone'); return state; }
   } else if (['hand', 'deck', 'life', 'trash', 'field', 'stage'].includes(destZone)) {
     if (isDon || isLeader) { 
-      // 例外: ステージゾーンはステージのみ (別途チェックしても良いが、ここではドンとリーダーを弾く)
-      // LeaderはLeaderゾーン以外に行けない（手札戻しなども通常不可）
-      // DonはDonゾーン以外に行けない（手札戻し不可）
       logger.warn('local.move_blocked', `Leader/Don cannot be placed in ${destZone}`); 
       return state; 
     }
   }
 
-  // 2. 移動に伴うステータスリセット & ドン!!剥離処理
   if (sourceZone === 'field') {
     const srcPlayer = newState.players[sourcePid];
     const attachedDons = srcPlayer.don_attached.filter((d: any) => d.attached_to === cardUuid);
@@ -194,7 +179,6 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
   targetCard.is_rest = false;
   targetCard.attached_don = 0;
   
-  // ゾーンによる表・裏設定
   if (['hand', 'field', 'trash', 'don_active', 'don_rested', 'stage'].includes(destZone)) {
     targetCard.is_face_up = true;
   } else if (['deck', 'life', 'don_deck'].includes(destZone)) {
@@ -203,7 +187,6 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
 
   const destPlayer = newState.players[destPid];
 
-  // 3. 自動コスト支払い (手札 -> 場)
   if (sourceZone === 'hand' && destZone === 'field' && sourcePid === destPid) {
     const cost = (targetCard as any).cost || 0;
     const activeDons = destPlayer.don_active;
@@ -219,7 +202,6 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
     }
   }
 
-  // 4. 移動先への配置
   if (destZone === 'leader') { destPlayer.leader = targetCard as LeaderCard; }
   else if (destZone === 'stage') {
     if (destPlayer.stage) {
@@ -236,7 +218,6 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
     }
   }
 
-  // カウンタの更新
   updatePlayerCounts(newState.players[sourcePid]);
   if (sourcePid !== destPid) updatePlayerCounts(newState.players[destPid]);
 
@@ -268,7 +249,9 @@ export const attachDonLocal = (state: GameState, donUuid: string, targetUuid: st
           p.leader.attached_don = Math.max(0, (p.leader.attached_don || 0) - 1); 
         } else { 
           const oldTarget = p.zones.field.find(c => c.uuid === oldTargetUuid); 
-          if (oldTarget) { oldTarget.attached_don = Math.max(0, (oldTarget.attached_don || 0) - 1); } 
+          if (oldTarget) { 
+            oldTarget.attached_don = Math.max(0, (oldTarget.attached_don || 0) - 1); 
+          } 
         }
       }
       break; 
@@ -336,19 +319,16 @@ export const resolveTurnEndLocal = (state: GameState): GameState => {
 
   const nextPlayer = newState.players[nextPid];
 
-  // リフレッシュ
   if (nextPlayer.leader) { nextPlayer.leader.is_rest = false; nextPlayer.leader.attached_don = 0; }
   if (nextPlayer.stage) { nextPlayer.stage.is_rest = false; }
   nextPlayer.zones.field.forEach(c => { c.is_rest = false; c.attached_don = 0; });
 
-  // ドン返還
   nextPlayer.don_active.push(...nextPlayer.don_rested);
   nextPlayer.don_rested = [];
   nextPlayer.don_active.push(...nextPlayer.don_attached);
   nextPlayer.don_attached = [];
   nextPlayer.don_active.forEach(d => { d.is_rest = false; (d as any).attached_to = null; });
 
-  // ドロー
   if (currentTurn > 1) {
     const deck = nextPlayer.zones.deck || [];
     if (deck.length > 0) {
@@ -358,8 +338,7 @@ export const resolveTurnEndLocal = (state: GameState): GameState => {
     }
   }
 
-  // ドン追加 (最大10枚)
-  const currentDonCount = nextPlayer.don_active.length; // アクティブのみ計算しているが、返還済みなのでOK
+  const currentDonCount = nextPlayer.don_active.length;
   const donToAddAmount = currentTurn === 1 ? 1 : 2;
   const donToAdd = Math.min(donToAddAmount, 10 - currentDonCount);
   
@@ -374,7 +353,7 @@ export const resolveTurnEndLocal = (state: GameState): GameState => {
     nextPlayer.zones.don_deck = donDeck;
   }
 
-  updatePlayerCounts(nextPlayer); // カウンタ更新（ここでドンデッキ枚数が正しくなる）
+  updatePlayerCounts(nextPlayer);
 
   newState.turn_info.current_phase = 'MAIN';
   logger.log({ level: 'info', action: 'local.turn_end', msg: `Turn passed to ${nextPid}`, payload: { turn: currentTurn } });
@@ -388,7 +367,6 @@ export const mulliganLocal = (state: GameState, playerId: string): GameState => 
   if (!player.zones.deck) { player.zones.deck = []; }
   const deck = player.zones.deck;
   
-  // 手札を裏向きにしてデッキに戻す
   player.zones.hand.forEach(c => c.is_face_up = false);
   deck.push(...player.zones.hand);
   player.zones.hand = [];
@@ -444,7 +422,6 @@ export const resetGameLocal = (state: GameState): GameState => {
   for (const pid of ['p1', 'p2'] as const) {
     const p = newState.players[pid];
     
-    // 1. 全カード回収
     const allCards: CardInstance[] = [];
     allCards.push(...p.zones.hand); p.zones.hand = [];
     allCards.push(...p.zones.field); p.zones.field = [];
@@ -453,14 +430,12 @@ export const resetGameLocal = (state: GameState): GameState => {
     if (p.zones.deck) { allCards.push(...p.zones.deck); p.zones.deck = []; }
     if (p.stage) { allCards.push(p.stage); p.stage = null; }
 
-    // カード状態リセット
     allCards.forEach(c => {
       c.is_rest = false;
       c.attached_don = 0;
       c.is_face_up = false;
     });
 
-    // 2. ドン回収
     const allDons: CardInstance[] = [];
     allDons.push(...p.don_active); p.don_active = [];
     allDons.push(...p.don_rested); p.don_rested = [];
@@ -474,13 +449,11 @@ export const resetGameLocal = (state: GameState): GameState => {
     });
     p.zones.don_deck = allDons;
 
-    // 3. リーダーリセット
     if (p.leader) {
       p.leader.is_rest = false;
       p.leader.attached_don = 0;
     }
 
-    // 4. デッキシャッフル & 再配置
     allCards.sort(() => Math.random() - 0.5);
     
     const lifeCount = p.leader?.life || 5;
@@ -491,7 +464,6 @@ export const resetGameLocal = (state: GameState): GameState => {
     updatePlayerCounts(p);
   }
 
-  // 1ターン目のドン追加 (P1のみ)
   const p1 = newState.players.p1;
   const p1DonDeck = p1.zones.don_deck;
   if (p1DonDeck && p1DonDeck.length > 0) {
