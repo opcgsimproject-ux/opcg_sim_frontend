@@ -717,7 +717,10 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
         try {
           const dRes = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
           const dData = await dRes.json();
-          if (dData.success) serverDecks = dData.decks;
+          if (dData.success) {
+            // IDが .json で終わる「デフォルトデッキ」を非表示にする
+            serverDecks = dData.decks.filter((d: any) => !d.id.endsWith('.json'));
+          }
         } catch(e) { console.log('Offline'); }
 
         const localDecks = getLocalDecks();

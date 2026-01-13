@@ -136,10 +136,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
   useEffect(() => {
     const fetchDecks = async () => {
-      const options: {id: string, name: string}[] = [
-        { id: 'imu.json', name: 'Imu (Offline)' }, 
-        { id: 'nami.json', name: 'Nami (Offline)' }
-      ];
+      // JSONベースのモックデッキ（imu.json, nami.json）を非表示にするため空配列から開始
+      const options: {id: string, name: string}[] = [];
 
       try {
         const localIds = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
@@ -156,7 +154,12 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
         const data = await res.json();
         if (data.success) {
-          data.decks.forEach((d: any) => { options.push({ id: `db:${d.id}`, name: d.name }); });
+          // サーバーからのリストからも .json で終わるものは除外する
+          data.decks.forEach((d: any) => { 
+            if (!d.id.endsWith('.json')) {
+              options.push({ id: `db:${d.id}`, name: d.name }); 
+            }
+          });
         }
       } catch(e) { console.error(e); }
 
@@ -174,8 +177,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         status: 'WAITING',
         ready_states: { p1: false, p2: false },
         players: {
-          p1: { name: 'imu.json', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
-          p2: { name: 'nami.json', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
+          p1: { name: '', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
+          p2: { name: '', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
         },
         turn_info: { turn_count: 0, active_player_id: 'p1', current_phase: 'SETUP', winner: null }
       });
