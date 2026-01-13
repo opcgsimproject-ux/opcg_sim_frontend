@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { GameState, CardInstance, PlayerState, LeaderCard, BoardCard } from './types';
+import type { GameState, CardInstance, PlayerState, LeaderCard, BoardCard } from './types';
 import { logger } from '../utils/logger';
 
 export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: string): GameState => {
@@ -31,7 +31,8 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       owner_id: playerId,
       name: "DON!!",
       type: "DON",
-      is_rest: false
+      is_rest: false,
+      is_face_up: true
     }));
 
     return {
@@ -93,7 +94,7 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
       break;
     }
     
-    for (const [zoneKey, zoneArray] of Object.entries(p.zones)) {
+    for (const [_, zoneArray] of Object.entries(p.zones)) {
       if (!Array.isArray(zoneArray)) continue;
       const idx = zoneArray.findIndex((c: CardInstance) => c.uuid === cardUuid);
       if (idx !== -1) {
