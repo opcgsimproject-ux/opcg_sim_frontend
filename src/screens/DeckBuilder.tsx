@@ -400,6 +400,7 @@ const DeckListView = ({ decks, onSelectDeck, onCreateNew, onBack }: { decks: Dec
                 <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{deck.name}</div>
                     <div style={{ fontSize: '12px', color: '#888' }}>{deck.card_uuids.length}枚</div>
+                    {deck.id && deck.id.startsWith('local-') && <div style={{ fontSize: '10px', color: '#e67e22' }}>Local Draft</div>}
                 </div>
                 <div style={{ fontSize: '20px', color: '#555' }}>›</div>
             </div>
@@ -717,10 +718,7 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
         try {
           const dRes = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
           const dData = await dRes.json();
-          if (dData.success) {
-            // IDが .json で終わる「デフォルトデッキ」を非表示にする
-            serverDecks = dData.decks.filter((d: any) => !d.id.endsWith('.json'));
-          }
+          if (dData.success) serverDecks = dData.decks;
         } catch(e) { console.log('Offline'); }
 
         const localDecks = getLocalDecks();
