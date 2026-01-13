@@ -1,5 +1,15 @@
 import type { GameState } from './types';
-import { moveCardLocal, toggleRestLocal, createInitialGameState, resolveTurnEndLocal } from './localLogic';
+import { 
+  moveCardLocal, 
+  toggleRestLocal, 
+  createInitialGameState, 
+  resolveTurnEndLocal,
+  attachDonLocal,
+  mulliganLocal,
+  finishMulliganLocal,
+  drawCardLocal,
+  shuffleDeckLocal
+} from './localLogic';
 import { logger } from '../utils/logger';
 
 export const handleLocalAction = (state: GameState, actionType: string, params: any): GameState => {
@@ -10,18 +20,21 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
     payload: params
   });
 
-  const newState = JSON.parse(JSON.stringify(state)) as GameState;
-
+  // ステート操作は localLogic 側でクローンしてから行うため、ここではそのまま渡す
   switch (actionType) {
-    case 'SET_DECK':
+    case 'SET_DECK': {
+      const newState = JSON.parse(JSON.stringify(state));
       newState.players[params.player_id as 'p1' | 'p2'].name = params.deck_id;
       return newState;
+    }
 
-    case 'READY':
+    case 'READY': {
+      const newState = JSON.parse(JSON.stringify(state));
       if (!newState.ready_states) newState.ready_states = { p1: false, p2: false };
       const pid = params.player_id as 'p1' | 'p2';
       newState.ready_states[pid] = !newState.ready_states[pid];
       return newState;
+    }
 
     case 'START':
       return createInitialGameState(params.p1Deck, params.p2Deck, state.room_name || 'local');
@@ -38,8 +51,23 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
     case 'TOGGLE_REST':
       return toggleRestLocal(state, params.card_uuid);
 
+    case 'ATTACH_DON':
+      return attachDonLocal(state, params.card_uuid, params.target_uuid);
+
     case 'TURN_END':
       return resolveTurnEndLocal(state);
+
+    case 'MULLIGAN':
+      return mulliganLocal(state, params.player_id);
+
+    case 'MULLIGAN_FINISH':
+      return finishMulliganLocal(state, params.player_id);
+
+    case 'DRAW':
+      return drawCardLocal(state, params.player_id || state.turn_info.active_player_id);
+
+    case 'SHUFFLE':
+      return shuffleDeckLocal(state, params.player_id);
 
     case 'RESET':
       return createInitialGameState(null, null, state.room_name || 'local-room');

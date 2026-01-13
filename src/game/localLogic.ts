@@ -2,9 +2,11 @@ import { v4 as uuidv4 } from 'uuid';
 import type { GameState, CardInstance, PlayerState, LeaderCard, BoardCard } from './types';
 import { logger } from '../utils/logger';
 
+// ヘルパー: ステートのディープコピー
+const cloneState = (state: GameState): GameState => JSON.parse(JSON.stringify(state));
+
 export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: string): GameState => {
   const setupPlayer = (deck: any, playerId: string, name: string): PlayerState => {
-    // データ取得の優先順位を整理
     const leaderRaw = (deck?.leader && Array.isArray(deck.leader) ? deck.leader[0] : deck?.leader) || 
                       (deck?.cards && deck.cards.find((c: any) => (c.type || '').toUpperCase() === 'LEADER'));
     
@@ -12,7 +14,6 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       name: "Unknown Leader",
       power: 5000,
       ...leaderRaw,
-      // ★重要: バックエンドの 'uuid' (OP01-001等) が上書きされる前に card_id へ保存
       card_id: leaderRaw?.uuid || leaderRaw?.card_id || leaderRaw?.number || leaderRaw?.id || "LEADER",
       uuid: uuidv4(),
       owner_id: playerId,
@@ -25,13 +26,12 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       .filter((c: any) => (c.type || '').toUpperCase() !== 'LEADER')
       .map((c: any) => ({
         ...c,
-        // ★重要: ここでも元のIDを確保
         card_id: c.uuid || c.card_id || c.number || c.id,
         uuid: uuidv4(),
         owner_id: playerId,
         is_rest: false,
         attached_don: 0,
-        is_face_up: true // 画像を表示するために必須
+        is_face_up: true
       }));
 
     const shuffled = [...mainCards].sort(() => Math.random() - 0.5);
@@ -71,45 +71,85 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
     turn_info: { turn_count: 1, active_player_id: 'p1', current_phase: 'MAIN', winner: null }
   };
 
-  // ログ出力（未使用変数エラー回避）
-  logger.log({
-    level: 'info',
-    action: 'local.init_game',
-    msg: 'Local game state initialized',
-    payload: { gameId: state.game_id }
-  });
+  // マリガン管理用のフラグをStateに追加（型定義にない場合はanyで注入）
+  (state as any).mulligan_finished = { p1: false, p2: false };
 
+  logger.log({ level: 'info', action: 'local.init_game', msg: 'Local game state initialized', payload: { gameId: state.game_id } });
   return state;
 };
 
 export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' | 'p2', destZone: string, index: number = -1): GameState => {
-  const newState = JSON.parse(JSON.stringify(state)) as GameState;
+  const newState = cloneState(state);
   let targetCard: CardInstance | null = null;
+  let sourcePid: 'p1' | 'p2' | null = null;
+  let sourceZone: string | null = null;
 
+  // 1. カードを探す
   for (const pid of ['p1', 'p2'] as const) {
     const p = newState.players[pid];
-    if (p.leader?.uuid === cardUuid) { targetCard = p.leader; p.leader = null; break; }
-    if (p.stage?.uuid === cardUuid) { targetCard = p.stage; p.stage = null; break; }
+    if (p.leader?.uuid === cardUuid) { targetCard = p.leader; p.leader = null; sourcePid = pid; sourceZone = 'leader'; break; }
+    if (p.stage?.uuid === cardUuid) { targetCard = p.stage; p.stage = null; sourcePid = pid; sourceZone = 'stage'; break; }
     
-    for (const [_, zoneArray] of Object.entries(p.zones)) {
+    for (const [zoneName, zoneArray] of Object.entries(p.zones)) {
       if (!Array.isArray(zoneArray)) continue;
       const idx = zoneArray.findIndex((c: CardInstance) => c.uuid === cardUuid);
-      if (idx !== -1) { targetCard = zoneArray.splice(idx, 1)[0]; break; }
+      if (idx !== -1) { 
+        targetCard = zoneArray.splice(idx, 1)[0]; 
+        sourcePid = pid;
+        sourceZone = zoneName;
+        break; 
+      }
     }
+    if (targetCard) break;
 
     const donKeys = ['don_active', 'don_rested', 'don_attached'] as const;
     for (const key of donKeys) {
-      const idx = p[key].findIndex(c => c.uuid === cardUuid);
-      if (idx !== -1) { targetCard = p[key].splice(idx, 1)[0]; break; }
+      // don_attached の場合は特別処理（attached_donを減らす等）は簡易化のため省略し、単純移動とする
+      const idx = (p as any)[key].findIndex((c: any) => c.uuid === cardUuid);
+      if (idx !== -1) { 
+        targetCard = (p as any)[key].splice(idx, 1)[0]; 
+        sourcePid = pid;
+        sourceZone = key;
+        break; 
+      }
     }
     if (targetCard) break;
   }
 
-  if (!targetCard) return state;
+  if (!targetCard || !sourcePid) return state;
+
+  // 2. 移動に伴うステータスリセット
+  targetCard.is_rest = false;
+  targetCard.attached_don = 0;
+  if (targetCard.owner_id) targetCard.owner_id = newState.players[destPid].name; // オーナー情報の更新
 
   const destPlayer = newState.players[destPid];
+
+  // 3. 自動コスト支払い (手札 -> 場)
+  if (sourceZone === 'hand' && destZone === 'field' && sourcePid === destPid) {
+    const cost = (targetCard as any).cost || 0;
+    const activeDons = destPlayer.don_active;
+    if (cost > 0 && activeDons.length >= cost) {
+      for (let i = 0; i < cost; i++) {
+        const don = activeDons.shift();
+        if (don) {
+          don.is_rest = true;
+          destPlayer.don_rested.push(don);
+        }
+      }
+      logger.log({ level: 'info', action: 'local.auto_cost', msg: `Paid ${cost} cost`, payload: { card: targetCard.name } });
+    }
+  }
+
+  // 4. 移動先への配置
   if (destZone === 'leader') { destPlayer.leader = targetCard as LeaderCard; }
-  else if (destZone === 'stage') { destPlayer.stage = targetCard as BoardCard; }
+  else if (destZone === 'stage') {
+    // ステージ張替え処理
+    if (destPlayer.stage) {
+      destPlayer.zones.trash.push(destPlayer.stage);
+    }
+    destPlayer.stage = targetCard as BoardCard;
+  }
   else if (['don_active', 'don_rested'].includes(destZone)) { (destPlayer as any)[destZone].push(targetCard); }
   else {
     const zone = (destPlayer.zones as any)[destZone];
@@ -119,52 +159,100 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
     }
   }
 
-  logger.log({ 
-    level: 'info', 
-    action: 'local.move_card', 
-    msg: `Moved ${targetCard.name} to ${destPid}.${destZone}`,
-    payload: { cardUuid, destPid, destZone }
-  });
-
+  logger.log({ level: 'info', action: 'local.move_card', msg: `Moved ${targetCard.name}`, payload: { uuid: cardUuid, to: destZone } });
   return newState;
 };
 
-export const toggleRestLocal = (state: GameState, cardUuid: string): GameState => {
-  const newState = JSON.parse(JSON.stringify(state)) as GameState;
-  
+export const attachDonLocal = (state: GameState, donUuid: string, targetUuid: string): GameState => {
+  const newState = cloneState(state);
+  let donCard: CardInstance | null = null;
+  let ownerPid: 'p1' | 'p2' | null = null;
+
+  // ドンカードを探す（アクティブまたはレストから）
   for (const pid of ['p1', 'p2'] as const) {
     const p = newState.players[pid];
-    if (p.leader?.uuid === cardUuid) { p.leader.is_rest = !p.leader.is_rest; break; }
-    if (p.stage?.uuid === cardUuid) { p.stage.is_rest = !p.stage.is_rest; break; }
-    const fieldIdx = p.zones.field.findIndex(c => c.uuid === cardUuid);
-    if (fieldIdx !== -1) { p.zones.field[fieldIdx].is_rest = !p.zones.field[fieldIdx].is_rest; break; }
-    const activeDonIdx = p.don_active.findIndex(c => c.uuid === cardUuid);
-    if (activeDonIdx !== -1) { const card = p.don_active.splice(activeDonIdx, 1)[0]; card.is_rest = true; p.don_rested.push(card); break; }
-    const restedDonIdx = p.don_rested.findIndex(c => c.uuid === cardUuid);
-    if (restedDonIdx !== -1) { const card = p.don_rested.splice(restedDonIdx, 1)[0]; card.is_rest = false; p.don_active.push(card); break; }
+    const activeIdx = p.don_active.findIndex(c => c.uuid === donUuid);
+    if (activeIdx !== -1) { donCard = p.don_active.splice(activeIdx, 1)[0]; ownerPid = pid; break; }
+    
+    const restedIdx = p.don_rested.findIndex(c => c.uuid === donUuid);
+    if (restedIdx !== -1) { donCard = p.don_rested.splice(restedIdx, 1)[0]; ownerPid = pid; break; }
+    
+    // フィールド上のドンなら一度剥がす扱い
+    const fieldIdx = p.zones.field.findIndex(c => c.uuid === donUuid); // 通常ありえないが念のため
+    if (fieldIdx !== -1) { donCard = p.zones.field.splice(fieldIdx, 1)[0]; ownerPid = pid; break; }
+  }
+
+  if (!donCard || !ownerPid) return state;
+
+  const player = newState.players[ownerPid];
+  
+  // 付与対象を探す
+  let targetFound = false;
+  if (player.leader?.uuid === targetUuid) {
+    player.leader.attached_don = (player.leader.attached_don || 0) + 1;
+    targetFound = true;
+  } else {
+    const fieldTarget = player.zones.field.find(c => c.uuid === targetUuid);
+    if (fieldTarget) {
+      fieldTarget.attached_don = (fieldTarget.attached_don || 0) + 1;
+      targetFound = true;
+    }
+  }
+
+  if (targetFound) {
+    donCard.is_rest = false;
+    // 便宜上 attached_to プロパティを持たせる（型定義外だがJS的には通る）
+    (donCard as any).attached_to = targetUuid;
+    player.don_attached.push(donCard);
+    logger.log({ level: 'info', action: 'local.attach_don', msg: 'Don attached', payload: { don: donUuid, target: targetUuid } });
+  } else {
+    // 対象が見つからない場合はアクティブに戻す
+    player.don_active.push(donCard);
   }
 
   return newState;
 };
 
+export const toggleRestLocal = (state: GameState, cardUuid: string): GameState => {
+  const newState = cloneState(state);
+  for (const pid of ['p1', 'p2'] as const) {
+    const p = newState.players[pid];
+    if (p.leader?.uuid === cardUuid) { p.leader.is_rest = !p.leader.is_rest; break; }
+    if (p.stage?.uuid === cardUuid) { p.stage.is_rest = !p.stage.is_rest; break; }
+    
+    const fieldIdx = p.zones.field.findIndex(c => c.uuid === cardUuid);
+    if (fieldIdx !== -1) { p.zones.field[fieldIdx].is_rest = !p.zones.field[fieldIdx].is_rest; break; }
+    
+    const activeDonIdx = p.don_active.findIndex(c => c.uuid === cardUuid);
+    if (activeDonIdx !== -1) { 
+      const card = p.don_active.splice(activeDonIdx, 1)[0]; card.is_rest = true; p.don_rested.push(card); break; 
+    }
+    const restedDonIdx = p.don_rested.findIndex(c => c.uuid === cardUuid);
+    if (restedDonIdx !== -1) { 
+      const card = p.don_rested.splice(restedDonIdx, 1)[0]; card.is_rest = false; p.don_active.push(card); break; 
+    }
+  }
+  return newState;
+};
+
 export const resolveTurnEndLocal = (state: GameState): GameState => {
-  const newState = JSON.parse(JSON.stringify(state)) as GameState;
+  const newState = cloneState(state);
   const nextPid = newState.turn_info.active_player_id === 'p1' ? 'p2' : 'p1';
   const nextPlayer = newState.players[nextPid];
 
-  // リフレッシュフェーズ
+  // リフレッシュ
   if (nextPlayer.leader) { nextPlayer.leader.is_rest = false; nextPlayer.leader.attached_don = 0; }
   if (nextPlayer.stage) { nextPlayer.stage.is_rest = false; }
   nextPlayer.zones.field.forEach(c => { c.is_rest = false; c.attached_don = 0; });
 
-  // ドン!!返還
+  // ドン!!返還（付与されていたドンも戻る）
   nextPlayer.don_active.push(...nextPlayer.don_rested);
   nextPlayer.don_rested = [];
   nextPlayer.don_active.push(...nextPlayer.don_attached);
   nextPlayer.don_attached = [];
-  nextPlayer.don_active.forEach(d => d.is_rest = false);
+  nextPlayer.don_active.forEach(d => { d.is_rest = false; (d as any).attached_to = null; });
 
-  // ドローフェーズ (undefinedチェック付き)
+  // ドロー
   const deck = nextPlayer.zones.deck || [];
   if (deck.length > 0) {
     const card = deck.shift();
@@ -172,11 +260,10 @@ export const resolveTurnEndLocal = (state: GameState): GameState => {
     nextPlayer.zones.deck = deck;
   }
 
-  // ドン!!追加フェーズ (undefinedチェック付き)
+  // ドン!!追加
   const currentDonCount = nextPlayer.don_active.length;
   const donToAdd = Math.min(2, 10 - currentDonCount);
   const donDeck = nextPlayer.zones.don_deck || [];
-  
   if (donToAdd > 0 && donDeck.length > 0) {
     for (let i = 0; i < donToAdd; i++) {
       if (donDeck.length > 0) {
@@ -187,17 +274,60 @@ export const resolveTurnEndLocal = (state: GameState): GameState => {
     nextPlayer.zones.don_deck = donDeck;
   }
 
-  // ターン更新
   newState.turn_info.active_player_id = nextPid;
   newState.turn_info.turn_count += 1;
   newState.turn_info.current_phase = 'MAIN';
 
-  logger.log({
-    level: 'info',
-    action: 'local.turn_end',
-    msg: `Turn passed to ${nextPid}`,
-    payload: { turn: newState.turn_info.turn_count }
-  });
+  logger.log({ level: 'info', action: 'local.turn_end', msg: `Turn passed to ${nextPid}`, payload: { turn: newState.turn_info.turn_count } });
+  return newState;
+};
 
+export const mulliganLocal = (state: GameState, playerId: string): GameState => {
+  const newState = cloneState(state);
+  const player = newState.players[playerId as 'p1' | 'p2'];
+  
+  // 手札をデッキに戻す
+  player.zones.deck.push(...player.zones.hand);
+  player.zones.hand = [];
+  
+  // シャッフル
+  player.zones.deck.sort(() => Math.random() - 0.5);
+  
+  // 5枚引く
+  for (let i = 0; i < 5; i++) {
+    const card = player.zones.deck.shift();
+    if (card) player.zones.hand.push(card);
+  }
+
+  logger.log({ level: 'info', action: 'local.mulligan', msg: `Mulligan executed for ${playerId}` });
+  return newState;
+};
+
+export const finishMulliganLocal = (state: GameState, playerId: string): GameState => {
+  const newState = cloneState(state);
+  const flags = (newState as any).mulligan_finished || { p1: false, p2: false };
+  flags[playerId] = true;
+  (newState as any).mulligan_finished = flags;
+  return newState;
+};
+
+export const drawCardLocal = (state: GameState, playerId: string): GameState => {
+  const newState = cloneState(state);
+  const player = newState.players[playerId as 'p1' | 'p2'];
+  if (player.zones.deck && player.zones.deck.length > 0) {
+    const card = player.zones.deck.shift();
+    if (card) player.zones.hand.push(card);
+    logger.log({ level: 'info', action: 'local.draw', msg: `${playerId} manually drew a card` });
+  }
+  return newState;
+};
+
+export const shuffleDeckLocal = (state: GameState, playerId: string): GameState => {
+  const newState = cloneState(state);
+  const player = newState.players[playerId as 'p1' | 'p2'];
+  if (player.zones.deck) {
+    player.zones.deck.sort(() => Math.random() - 0.5);
+    logger.log({ level: 'info', action: 'local.shuffle', msg: `${playerId} shuffled deck` });
+  }
   return newState;
 };
