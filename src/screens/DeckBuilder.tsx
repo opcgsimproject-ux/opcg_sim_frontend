@@ -618,7 +618,7 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
         borderTop: '1px solid #444', 
         display: 'flex', 
         gap: '12px', 
-        alignItems: 'center',
+        alignItems: 'center', 
         zIndex: 10
       }}>
         <button onClick={onClose} style={{ padding: '10px 16px', background: '#555', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', flexShrink: 0, cursor: 'pointer' }}>
@@ -718,7 +718,10 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
         try {
           const dRes = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
           const dData = await dRes.json();
-          if (dData.success) serverDecks = dData.decks;
+          // ▼ 修正: JSON由来のデフォルトデッキを除外
+          if (dData.success && Array.isArray(dData.decks)) {
+             serverDecks = dData.decks.filter((d: DeckData) => !d.id || !d.id.endsWith('.json'));
+          }
         } catch(e) { console.log('Offline'); }
 
         const localDecks = getLocalDecks();
