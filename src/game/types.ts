@@ -10,8 +10,12 @@ export interface BaseCard {
   cost?: number;
   attribute?: string;
   attached_don?: number;
-  is_face_up?: boolean; // 画像表示用に必須
-  life?: number; // LeaderCard用だがBaseCardにも持たせておく
+  is_face_up?: boolean;
+  life?: number;
+  // ▼ 追加: 既存コンポーネントで参照されているプロパティ
+  keywords?: string[];
+  traits?: string[];
+  text?: string;
 }
 
 export interface LeaderCard extends BaseCard {
@@ -37,8 +41,8 @@ export interface DonCard extends BaseCard {
 // すべてのカード型の集合
 export type CardInstance = LeaderCard | CharacterCard | EventCard | StageCard | DonCard;
 
-// 修正: BoardSideでのエラーを防ぐため、BoardCardをCardInstanceと互換性のある型にする
-export type BoardCard = CardInstance; 
+// BoardSideでの互換性のため
+export type BoardCard = CardInstance;
 
 export interface ZoneState {
   field: CardInstance[];
@@ -63,7 +67,7 @@ export interface PlayerState {
   don_deck_count: number;
 }
 
-// RealGame.tsx で必要な型定義
+// RealGame.tsx のエラー解消用
 export interface PendingRequest {
   player_id: string;
   action: string;
@@ -73,6 +77,8 @@ export interface PendingRequest {
   candidates?: any[];
   constraints?: any;
   options?: any;
+  // ▼ 追加: 必須プロパティ
+  request_id: string;
 }
 
 export interface GameState {
@@ -90,12 +96,11 @@ export interface GameState {
     winner: string | null;
   };
   ready_states?: { p1: boolean; p2: boolean };
-  // RealGame.tsx で必要なバトル情報
+  // RealGame.tsx 用
   active_battle?: {
     attacker_uuid: string;
     target_uuid: string;
     counter_buff: number;
-    // 必要に応じてプロパティを追加
     attacker?: any;
     target?: any;
   } | null;
