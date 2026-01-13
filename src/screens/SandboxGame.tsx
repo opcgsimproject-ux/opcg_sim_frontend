@@ -39,10 +39,10 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   const longPressTimerRef = useRef<any>(null);
   const pressStartPosRef = useRef<{x: number, y: number} | null>(null);
 
-  const isLocalMode = useMemo(() => myPlayerId === 'both', [myPlayerId]);
-
   const dragStateRef = useRef(dragState);
   useEffect(() => { dragStateRef.current = dragState; }, [dragState]);
+
+  const isLocalMode = useMemo(() => myPlayerId === 'both', [myPlayerId]);
 
   const isMyTurn = useMemo(() => {
     if (!gameState || myPlayerId === 'both') return true;
@@ -121,15 +121,15 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   useEffect(() => {
     if (isLocalMode) {
       setGameState({
-        game_id: 'local',
+        game_id: 'local-init',
         room_name: roomName || 'LOCAL',
         status: 'WAITING',
+        ready_states: { p1: false, p2: false },
         players: {
-          p1: { player_id: 'p1', name: 'Player 1', leader: null, zones: { field: [], hand: [], life: [], trash: [] }, don_count: 0, active_don: 0, don_active: [], don_rested: [], don_attached: [] },
-          p2: { player_id: 'p2', name: 'Player 2', leader: null, zones: { field: [], hand: [], life: [], trash: [] }, don_count: 0, active_don: 0, don_active: [], don_rested: [], don_attached: [] }
+          p1: { name: 'Player 1', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
+          p2: { name: 'Player 2', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
         },
-        turn_info: { turn_count: 1, active_player_id: 'p1', current_phase: 'MAIN', winner: null },
-        ready_states: { p1: false, p2: false }
+        turn_info: { turn_count: 0, active_player_id: 'p1', current_phase: 'SETUP', winner: null }
       });
       return;
     }
@@ -409,15 +409,16 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
   const handleAction = async (type: string, params: any) => {
       if (isPending || !gameState) return;
+      if (!isLocalMode && !activeGameId) return;
+
       setIsPending(true);
       try { 
           if (isLocalMode) {
               const nextState = handleLocalAction(gameState, type, params);
               setGameState(nextState);
           } else {
-              if (!activeGameId) return;
-              const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId;
-              const res = await apiClient.sendSandboxAction(activeGameId, { action_type: type, player_id: pid, ...params }); 
+              const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId; 
+              const res = await apiClient.sendSandboxAction(activeGameId!, { action_type: type, player_id: pid, ...params }); 
               setGameState(res.state); 
           }
       } catch(e) { logger.error('sandbox.action_fail', String(e)); } finally { setIsPending(false); }

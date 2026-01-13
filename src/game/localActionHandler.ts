@@ -10,7 +10,26 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
     payload: params
   });
 
+  const newState = JSON.parse(JSON.stringify(state)) as GameState;
+
   switch (actionType) {
+    case 'SET_DECK':
+      newState.players[params.player_id as 'p1' | 'p2'].name = params.deck_id;
+      return newState;
+
+    case 'READY':
+      if (!newState.ready_states) newState.ready_states = { p1: false, p2: false };
+      const pid = params.player_id as 'p1' | 'p2';
+      newState.ready_states[pid] = !newState.ready_states[pid];
+      return newState;
+
+    case 'START':
+      const p1DeckId = newState.players.p1.name;
+      const p2DeckId = newState.players.p2.name;
+      // 注意: 本来はここでデッキデータをfetchする必要があります
+      // 今回は既存の初期化処理を流用します
+      return createInitialGameState({ leader: [], cards: [] }, { leader: [], cards: [] }, state.room_name || 'local');
+
     case 'MOVE_CARD':
       return moveCardLocal(
         state,
@@ -19,10 +38,13 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
         params.dest_zone,
         params.index
       );
+
     case 'TOGGLE_REST':
       return toggleRestLocal(state, params.card_uuid);
+
     case 'RESET':
-      return createInitialGameState(null, null, state.room_name || 'local-room');
+      return createInitialGameState({ leader: [], cards: [] }, { leader: [], cards: [] }, state.room_name || 'local-room');
+
     default:
       logger.warn('local_action.unknown', `Action ${actionType} is not implemented locally.`);
       return state;
