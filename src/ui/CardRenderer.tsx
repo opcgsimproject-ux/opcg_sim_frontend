@@ -1,161 +1,242 @@
 import * as PIXI from 'pixi.js';
+import { LAYOUT_CONSTANTS, LAYOUT_PARAMS } from '../layout/layout.config';
+import { GAME_UI_CONFIG } from '../game/game.config';
+import { logger } from '../utils/logger';
 import { API_CONFIG } from '../api/api.config';
-import type { CardInstance } from '../game/types';
 
-// カードの見た目を作る設定
-const STYLES = {
-  width: 100,
-  height: 140,
-  radius: 8,
-  border: 2,
-  color: 0xFFFFFF,
-  textColor: 0x000000,
-  bgColor: 0x222222,
-};
-
-interface RenderOptions {
-  onClick?: () => void;
-  isOpponent?: boolean;
-  count?: number; // デッキやトラッシュの枚数表示用
-}
+const { COLORS, SIZES } = LAYOUT_CONSTANTS;
+const { SHAPE, UI_DETAILS, PHYSICS } = LAYOUT_PARAMS;
 
 export const createCardContainer = (
-  card: CardInstance | { name: string; card_id?: string; uuid?: string },
-  width: number,
-  height: number,
-  options?: RenderOptions
-): PIXI.Container => {
+  card: any,
+  cw: number,
+  ch: number,
+  options: { count?: number; onClick: () => void; isOpponent?: boolean }
+) => {
   const container = new PIXI.Container();
-  
-  // 背景 (枠線)
-  const bg = new PIXI.Graphics();
-  bg.beginFill(0xFFFFFF);
-  bg.drawRoundedRect(0, 0, width, height, STYLES.radius);
-  bg.endFill();
-  container.addChild(bg);
+  // ▼▼▼ 追加: UUIDをコンテナ名として設定（DnD用） ▼▼▼
+  if (card?.uuid) {
+    container.name = card.uuid;
+  }
+  // ▲▲▲ 追加ここまで ▲▲▲
 
-  // 画像エリア (枠線を引いた内側)
-  const innerMask = new PIXI.Graphics();
-  innerMask.beginFill(0x000000);
-  innerMask.drawRoundedRect(2, 2, width - 4, height - 4, STYLES.radius - 1);
-  innerMask.endFill();
-  container.addChild(innerMask);
+  const isOpponent = options.isOpponent ?? false;
+  const isRest = card?.is_rest === true;
+  const isBack = card?.is_face_up === false;
+  const isEmpty = options.count !== undefined && options.count <= 0;
 
-  // 画像URLの決定ロジック
-  let imageUrl = '';
-  const isFaceUp = (card as any).is_face_up !== false; // デフォルトは表向きとする
+  if (isRest) {
+    container.rotation = Math.PI / 2;
+  }
 
-  if (!isFaceUp) {
-    // 裏向きの場合 (スリーブ画像など。ここでは簡易的に共通裏面)
-    imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/card_back.png`; 
-  } else {
-    // 表向きの場合
-    // ★修正ポイント: uuid (ランダムID) ではなく card_id (型番) を優先する
-    const cardId = (card as any).card_id || (card as any).uuid;
-    
-    if (cardId) {
-      // "DON" や "DON!!" の表記ゆれに対応
-      if (cardId.toUpperCase() === 'DON' || cardId === 'DON!!') {
-         // ドンカードの画像IDが決まっている場合はそれを指定（例: "OP01-000"など）。
-         // ここでは汎用的なドン画像、なければAPIサーバーの仕様に合わせる
-         imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/DON.png`; 
-      } else {
-         imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/${cardId}.png`;
-      }
+  // --- 画像URLの決定 ---
+  let imageUrl = null;
+  const cardName = card?.name || "";
+
+  if (!isEmpty) {
+    if (cardName === 'Don!! Deck') {
+      // ドンデッキ裏面
+      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/DON_back.png`;
+    } else if (cardName === 'Deck' || cardName === 'Life') {
+      // デッキ・ライフ裏面
+      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/OPCG_back.png`;
+    } else if (isBack) {
+      // その他の裏面カード（手札など）
+      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/OPCG_back.png`;
+    } else if (card?.card_id) {
+      // 表面: IDがある場合 (DONを含む)
+      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/${card.card_id}.png`;
     }
   }
 
-  // 画像スプライトの読み込み
-  if (imageUrl) {
+  // --- 描画処理 ---
+  if (isEmpty) {
+    // 0枚時は枠のみ
+    const g = new PIXI.Graphics();
+    g.lineStyle(2, 0x666666, 0.5);
+    g.beginFill(0x000000, 0.2);
+    g.drawRoundedRect(-cw / 2, -ch / 2, cw, ch, SHAPE.CORNER_RADIUS_CARD);
+    g.endFill();
+    container.addChild(g);
+    
+    const txt = new PIXI.Text("EMPTY", { fontSize: 14, fill: 0x666666 });
+    txt.anchor.set(0.5);
+    container.addChild(txt);
+
+  } else if (imageUrl) {
+    // 画像表示モード
     const sprite = PIXI.Sprite.from(imageUrl);
-    sprite.width = width - 4;
-    sprite.height = height - 4;
-    sprite.x = 2;
-    sprite.y = 2;
-    sprite.mask = innerMask;
+    sprite.width = cw;
+    sprite.height = ch;
+    sprite.anchor.set(0.5);
     
-    // 読み込みエラー時のフォールバック (テキスト表示)
-    sprite.texture.baseTexture.on('error', () => {
-        // 画像がなければテキストで名前を表示
-        const text = new PIXI.Text(card.name || 'Unknown', {
-            fontSize: 14,
-            fill: 0xFFFFFF,
-            wordWrap: true,
-            wordWrapWidth: width - 10,
-            align: 'center'
-        });
-        text.anchor.set(0.5);
-        text.x = width / 2;
-        text.y = height / 2;
-        container.addChild(text);
-        container.removeChild(sprite); // エラー画像は消す
-    });
-
+    const mask = new PIXI.Graphics();
+    mask.beginFill(0xFFFFFF);
+    mask.drawRoundedRect(-cw / 2, -ch / 2, cw, ch, SHAPE.CORNER_RADIUS_CARD);
+    mask.endFill();
+    sprite.mask = mask;
+    
     container.addChild(sprite);
+    container.addChild(mask);
+
+    // 枠線
+    const border = new PIXI.Graphics();
+    border.lineStyle(SHAPE.STROKE_WIDTH_ZONE, COLORS.ZONE_BORDER);
+    border.drawRoundedRect(-cw / 2, -ch / 2, cw, ch, SHAPE.CORNER_RADIUS_CARD);
+    container.addChild(border);
+
   } else {
-    // IDがない場合など
-    const text = new PIXI.Text(card.name || '?', {
-        fontSize: 14, fill: 0xFFFFFF, align: 'center'
-    });
-    text.anchor.set(0.5);
-    text.x = width / 2;
-    text.y = height / 2;
-    container.addChild(text);
+    // 画像なし & 裏面でない場合のフォールバック（色塗り）
+    const g = new PIXI.Graphics();
+    g.lineStyle(SHAPE.STROKE_WIDTH_ZONE, COLORS.ZONE_BORDER);
+    // isBackのケースは上でimageUrlが設定されるはずだが念のため
+    g.beginFill(isBack ? COLORS.CARD_BACK : COLORS.ZONE_FILL);
+    g.drawRoundedRect(-cw / 2, -ch / 2, cw, ch, SHAPE.CORNER_RADIUS_CARD);
+    g.endFill();
+    container.addChild(g);
   }
 
-  // レスト状態の表示 (半透明の黒を重ねる、または回転させる)
-  // ここでは回転は親コンポーネント(BoardSide)で制御されることが多いため、
-  // 視覚効果としての「暗転」などを入れる場合はここに記述
-  if ((card as any).is_rest) {
-    const restFilter = new PIXI.Graphics();
-    restFilter.beginFill(0x000000, 0.3); // 30%黒
-    restFilter.drawRoundedRect(0, 0, width, height, STYLES.radius);
-    restFilter.endFill();
-    container.addChild(restFilter);
+  if (isEmpty) return container;
+
+  // テキスト追加ヘルパー
+  const addText = (content: string, style: any, x: number, y: number, rotationMode: 'screen' | 'card' | number = 'screen') => {
+    const txt = new PIXI.Text(content, style);
+    if (!isBack && imageUrl) {
+      style.stroke = '#000000';
+      style.strokeThickness = 3;
+      txt.style = style;
+    }
+
+    const maxWidth = isRest ? ch * UI_DETAILS.CARD_TEXT_MAX_WIDTH_RATIO : cw * UI_DETAILS.CARD_TEXT_MAX_WIDTH_RATIO;
+    if (txt.width > maxWidth) {
+      let fullText = content;
+      while (txt.width > maxWidth && fullText.length > 0) {
+        fullText = fullText.slice(0, -1);
+        txt.text = fullText + "...";
+      }
+    }
+    txt.anchor.set(0.5);
+    txt.position.set(x, y);
+    
+    if (rotationMode === 'screen') {
+      txt.rotation = -container.rotation;
+    } else if (rotationMode === 'card') {
+      txt.rotation = 0;
+    } else {
+      txt.rotation = rotationMode;
+    }
+    container.addChild(txt);
+  };
+
+  // --- 情報表示 (画像がある場合はテキストを非表示にする) ---
+  if (!isBack) {
+    const isResource = ['Trash', 'Deck', 'Life'].includes(cardName) || cardName.startsWith('Don!!');
+    const isLeader = card?.type === 'LEADER' || card?.type === 'リーダー';
+
+    // バッジ（コスト）
+    if (card?.cost !== undefined && !isLeader && !isResource) {
+      const cx = -cw / 2 + UI_DETAILS.CARD_BADGE_OFFSET;
+      const cy = -ch / 2 + UI_DETAILS.CARD_BADGE_OFFSET;
+      const costBadge = new PIXI.Graphics()
+        .beginFill(COLORS.BADGE_COST_BG, 1)
+        .lineStyle(1, 0xFFFFFF)
+        .drawCircle(cx, cy, SHAPE.CORNER_RADIUS_BADGE)
+        .endFill();
+      container.addChild(costBadge);
+      addText(`${card.cost}`, { fontSize: SIZES.FONT_COST, fill: COLORS.TEXT_LIGHT, fontWeight: 'bold' }, cx, cy, 'screen');
+    }
+
+    // カウンター
+    if (card?.counter !== undefined && card.counter > 0) {
+      const xOffset = isOpponent ? (cw / 2 - UI_DETAILS.CARD_TEXT_PADDING_X) : (-cw / 2 + UI_DETAILS.CARD_TEXT_PADDING_X);
+      addText(`+${card.counter}`, { fontSize: SIZES.FONT_COUNTER, fill: '#ffff00', fontWeight: 'bold', stroke: 'black', strokeThickness: 4 }, xOffset, 0, -Math.PI / 2);
+    }
+
+    // パワー
+    if (card?.power !== undefined && !isResource) {
+      const pStyle = { fontSize: SIZES.FONT_POWER, fill: COLORS.TEXT_POWER, fontWeight: 'bold', stroke: 'black', strokeThickness: 4 };
+      if (isRest) {
+        addText(`${card.power}`, pStyle, -cw / 2 - UI_DETAILS.CARD_TEXT_PADDING_X, 0, 'screen');
+      } else {
+        addText(`${card.power}`, pStyle, 0, -ch / 2 - UI_DETAILS.CARD_TEXT_PADDING_X, 'screen');
+      }
+    }
+
+    // ドン!!付与数
+    if (card?.attached_don > 0) {
+      const bx = isOpponent ? (-cw / 2 + UI_DETAILS.CARD_BADGE_DON_OFFSET) : (cw / 2 - UI_DETAILS.CARD_BADGE_DON_OFFSET);
+      const by = isOpponent ? (ch / 2 - UI_DETAILS.CARD_BADGE_DON_OFFSET) : (-ch / 2 + UI_DETAILS.CARD_BADGE_DON_OFFSET);
+      const donBadge = new PIXI.Graphics()
+        .beginFill(COLORS.BADGE_DON_BG, 1)
+        .lineStyle(1, 0xFFFFFF)
+        .drawCircle(bx, by, SHAPE.CORNER_RADIUS_BADGE)
+        .endFill();
+      container.addChild(donBadge);
+      addText(`+${card.attached_don}`, { fontSize: SIZES.FONT_DON, fill: COLORS.TEXT_LIGHT, fontWeight: 'bold' }, bx, by, 'screen');
+    }
+
+    // ★重要: カード名テキストの制御
+    if (!imageUrl) {
+      const nameStyle = { 
+        fontSize: isResource ? SIZES.FONT_NAME_RESOURCE : SIZES.FONT_NAME_NORMAL, 
+        fontWeight: 'bold', 
+        fill: isResource ? COLORS.TEXT_RESOURCE : COLORS.TEXT_DEFAULT 
+      };
+
+      if (isResource) {
+        addText(cardName, nameStyle, 0, 0, 'screen');
+      } else {
+        if (isRest) {
+          const posX = cw / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
+          addText(cardName, nameStyle, posX, 0, 'screen'); 
+        } else {
+          const posY = ch / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
+          addText(cardName, nameStyle, 0, posY, 'screen');
+        }
+      }
+    }
+
+  } else {
+    // 裏面テキスト
+    if (!imageUrl) {
+      addText(GAME_UI_CONFIG.TEXT.BACK_SIDE, { fontSize: SIZES.FONT_BACK, fontWeight: 'bold', fill: COLORS.TEXT_LIGHT, align: 'center' }, 0, 0, 'screen');
+    }
   }
 
-  // 枚数バッジ (デッキやトラッシュ用)
-  if (options?.count !== undefined && options.count > 1) {
-    const badge = new PIXI.Graphics();
-    badge.beginFill(0xE74C3C); // 赤
-    badge.lineStyle(1, 0xFFFFFF);
-    badge.drawCircle(0, 0, 12);
-    badge.endFill();
-    badge.x = width - 10;
-    badge.y = 10;
-    
-    const countText = new PIXI.Text(options.count.toString(), {
-        fontSize: 12,
-        fill: 0xFFFFFF,
-        fontWeight: 'bold'
-    });
-    countText.anchor.set(0.5);
-    countText.x = 0;
-    countText.y = 0;
-    
-    badge.addChild(countText);
+  // --- 重なり枚数バッジ ---
+  if (options.count !== undefined && options.count > 0) {
+    const bx = isOpponent ? (-cw / 2 + UI_DETAILS.CARD_BADGE_OFFSET) : (cw / 2 - UI_DETAILS.CARD_BADGE_OFFSET);
+    const by = isOpponent ? (-ch / 2 + UI_DETAILS.CARD_BADGE_OFFSET) : (ch / 2 - UI_DETAILS.CARD_BADGE_OFFSET);
+    const badge = new PIXI.Graphics()
+        .beginFill(COLORS.BADGE_BG, 1)
+        .lineStyle(1, 0xFFFFFF)
+        .drawCircle(bx, by, SHAPE.CORNER_RADIUS_BADGE)
+        .endFill();
     container.addChild(badge);
+    addText(options.count.toString(), { fontSize: SIZES.FONT_COUNT, fill: COLORS.BADGE_TEXT, fontWeight: 'bold' }, bx, by, 'screen');
   }
 
-  // インタラクション設定
   container.eventMode = 'static';
   container.cursor = 'pointer';
-  
-  // レスト状態による回転（90度）
-  if ((card as any).is_rest) {
-      // 90度回転させる場合、中心点を基準に回す必要がある
-      container.pivot.set(width / 2, height / 2);
-      container.rotation = Math.PI / 2;
-      // 回転後の位置ズレ補正は配置側(BoardSide)で行うのが一般的だが、
-      // ここで pivot を設定したので配置側で x, y に width/2, height/2 を足す必要があるかもしれない。
-      // もし BoardSide.tsx で width/height を入れ替えて配置しているなら、ここでは回転させない方が良い。
-      // 現状の BoardSide.tsx は回転させていないようなので、ここで回転を適用するか、
-      // 以前の挙動に戻すなら rotation は削除してください。
-      
-      // ★今回のBoardSide実装に合わせるため、回転はコメントアウトし、
-      // 代わりに「レスト」表示は上記の色変え等で表現するか、BoardSide側で制御します。
-      // container.rotation = Math.PI / 2; 
-  }
+
+  let pointerDownPos = { x: 0, y: 0 };
+  container.on('pointerdown', (e) => {
+    pointerDownPos = { x: e.global.x, y: e.global.y };
+  });
+  container.on('pointertap', (e) => {
+    const dx = e.global.x - pointerDownPos.x;
+    const dy = e.global.y - pointerDownPos.y;
+    if (Math.sqrt(dx * dx + dy * dy) <= PHYSICS.TAP_THRESHOLD) {
+      e.stopPropagation();
+      logger.log({
+        level: 'info',
+        action: 'ui.card_tap',
+        msg: `Card tapped: ${card?.name || 'unknown'}`,
+        payload: { uuid: card?.uuid, isOpponent }
+      });
+      if (options.onClick) options.onClick();
+    }
+  });
 
   return container;
 };
