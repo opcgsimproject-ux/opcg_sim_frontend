@@ -735,7 +735,6 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
 
   const handleSaveDeck = async () => {
     if (!currentDeck) return;
-    const isNew = !currentDeck.id;
     const tempId = currentDeck.id || `local-${Date.now()}`;
     const deckToSave = { ...currentDeck, id: tempId };
     const leaderCard = allCards.find(c => c.uuid === deckToSave.leader_id);
