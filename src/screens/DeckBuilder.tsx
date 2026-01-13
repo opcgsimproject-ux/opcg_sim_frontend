@@ -149,6 +149,23 @@ const SectionTitle = React.memo(({ children, onSelectAll }: { children: string, 
   </div>
 ));
 
+const StatSection = React.memo(({ title, data }: { title: string, data: [string, number][] }) => (
+  <div style={{ marginBottom: '20px' }}>
+    <div style={{ fontSize: '14px', fontWeight: 'bold', borderLeft: '3px solid #e74c3c', paddingLeft: '8px', marginBottom: '10px' }}>{title}</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+      {data.map(([key, count]) => (
+        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '60px', fontSize: '12px' }}>{key}</div>
+          <div style={{ flex: 1, height: '12px', background: '#444', borderRadius: '6px', overflow: 'hidden' }}>
+            <div style={{ width: `${Math.min((count / 50) * 100, 100)}%`, height: '100%', background: '#3498db' }} />
+          </div>
+          <div style={{ width: '30px', fontSize: '12px', textAlign: 'right' }}>{count}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+));
+
 // --- メイン画面コンポーネント ---
 
 const CardDetailScreen = ({ card, currentCount, onCountChange, onClose, onNavigate, viewOnly }: any) => {
@@ -265,6 +282,39 @@ const FilterModal = ({ filters, onApply, traitList, setList, onClose, onReset }:
   );
 };
 
+// ▼▼▼ 復元: DeckDistributionModal ▼▼▼
+const DeckDistributionModal = ({ deck, allCards, onClose }: { deck: DeckData, allCards: CardData[], onClose: () => void }) => {
+  const stats = useMemo(() => {
+    const cards = deck.card_uuids.map(uuid => allCards.find(c => c.uuid === uuid)).filter(Boolean) as CardData[];
+    const costs: Record<string, number> = {};
+    const counters: Record<string, number> = { 'NONE': 0, '1000': 0, '2000': 0 };
+
+    cards.forEach(c => {
+      const cost = c._normCost !== undefined ? (c._normCost >= 10 ? '10+' : c._normCost.toString()) : '0';
+      costs[cost] = (costs[cost] || 0) + 1;
+      const counter = c.counter ? c.counter.toString() : 'NONE';
+      if (counters[counter] !== undefined) counters[counter]++;
+    });
+
+    return {
+      costs: Object.entries(costs).sort((a, b) => (a[0] === '10+' ? 10 : parseInt(a[0])) - (b[0] === '10+' ? 10 : parseInt(b[0]))),
+      counters: Object.entries(counters)
+    };
+  }, [deck.card_uuids, allCards]);
+
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 110, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div style={{ background: '#222', width: '100%', maxWidth: '400px', borderRadius: '12px', padding: '20px' }}>
+        <h3 style={{ marginTop: 0 }}>デッキ分布</h3>
+        <StatSection title="コスト分布" data={stats.costs} />
+        <StatSection title="カウンター分布" data={stats.counters} />
+        <button onClick={onClose} style={{ width: '100%', marginTop: '20px', padding: '10px', background: '#333', color: 'white', border: '1px solid #555', borderRadius: '4px' }}>閉じる</button>
+      </div>
+    </div>
+  );
+};
+// ▲▲▲ 復元ここまで ▲▲▲
+
 // --- メインロジック ---
 
 const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose, viewOnly }: any) => {
@@ -376,6 +426,7 @@ const DeckEditorView = ({ deck, allCards, onUpdateDeck, onSave, onBack, onOpenCa
         <input value={deck.name} onChange={e => onUpdateDeck({...deck, name: e.target.value})} style={{ flex: 1, background: '#222', color: 'white' }} />
         <div style={{fontSize:'12px'}}>{deck.card_uuids.length}/50</div>
         <button onClick={onSave} style={{ background: '#e74c3c', color: 'white', padding: '5px 15px' }}>保存</button>
+        <button onClick={() => setShowStats(true)} style={{ padding: '5px' }}>📊</button>
       </div>
       <div style={{ padding: '10px', textAlign: 'center' }}><CardImageStub card={groupedCards.leaderCard || { name: "Leader" }} onClick={() => onOpenCatalog('leader')} /></div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '10px' }}>
@@ -466,35 +517,15 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
     const cardObjects = deckToSave.card_uuids.map(uuid => allCards.find(c => c.uuid === uuid)).filter(Boolean);
     const sandboxFormat = { deck: { leader: leaderCard ? [leaderCard] : [], cards: cardObjects }, ...deckToSave };
 
-    try {
-      localStorage.setItem(`opcg_deck_${tempId}`, JSON.stringify(sandboxFormat));
-      const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
-      if (!ids.includes(tempId)) localStorage.setItem('opcg_local_deck_ids', JSON.stringify([...ids, tempId]));
-      setDecks(prev => {
-        const exists = prev.find(d => d.id === tempId);
-        return exists ? prev.map(d => d.id === tempId ? deckToSave : d) : [...prev, deckToSave];
-      });
-    } catch (e) { alert('容量不足'); return; }
-
-    try {
-      const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deckToSave) });
-      const data = await res.json();
-      if (data.success) {
-         const serverId = data.deck_id;
-         const serverDeck = { ...deckToSave, id: serverId };
-         localStorage.setItem(`opcg_deck_${serverId}`, JSON.stringify({ ...sandboxFormat, ...serverDeck }));
-         if (tempId !== serverId) {
-           localStorage.removeItem(`opcg_deck_${tempId}`);
-           const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
-           localStorage.setItem('opcg_local_deck_ids', JSON.stringify(ids.filter((id: string) => id !== tempId)));
-         }
-         setCurrentDeck(serverDeck);
-         alert('保存しました (同期完了)');
-         return;
-      }
-    } catch (e) { console.warn('Offline save'); }
-    setCurrentDeck(deckToSave);
-    alert('保存しました (オフライン)');
+    localStorage.setItem(`opcg_deck_${tempId}`, JSON.stringify(sandboxFormat));
+    const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
+    if (!ids.includes(tempId)) localStorage.setItem('opcg_local_deck_ids', JSON.stringify([...ids, tempId]));
+    
+    setDecks(prev => {
+      const exists = prev.find(d => d.id === tempId);
+      return exists ? prev.map(d => d.id === tempId ? deckToSave : d) : [...prev, deckToSave];
+    });
+    alert('保存しました');
   };
 
   if (mode === 'list') return <DeckListView decks={decks} onSelectDeck={(d: any) => { setCurrentDeck(d); setMode('edit'); }} onCreateNew={() => { setCurrentDeck({ name: 'New Deck', leader_id: null, card_uuids: [], don_uuids: [] }); setMode('edit'); }} onBack={onBack} />;
