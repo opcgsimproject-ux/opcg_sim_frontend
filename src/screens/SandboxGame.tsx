@@ -111,9 +111,15 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
         const data = await res.json();
         if (data.success) {
-          setDeckOptions([{ id: 'imu.json', name: 'Imu (Default)' }, { id: 'nami.json', name: 'Nami (Default)' }, ...data.decks.map((d: any) => ({ id: `db:${d.id}`, name: d.name }))]);
+          setDeckOptions([
+            { id: 'imu.json', name: 'Imu (Default)' }, 
+            { id: 'nami.json', name: 'Nami (Default)' }, 
+            ...data.decks.map((d: any) => ({ id: `db:${d.id}`, name: d.name }))
+          ]);
         }
-      } catch(e) { console.error(e); }
+      } catch(e) { 
+        logger.error('sandbox.fetch_decks_fail', String(e));
+      }
     };
     fetchDecks();
   }, []);
@@ -126,8 +132,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         status: 'WAITING',
         ready_states: { p1: false, p2: false },
         players: {
-          p1: { name: 'p1', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
-          p2: { name: 'p2', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
+          p1: { name: 'imu.json', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
+          p2: { name: 'nami.json', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
         },
         turn_info: { turn_count: 0, active_player_id: 'p1', current_phase: 'SETUP', winner: null }
       });
@@ -421,13 +427,17 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                   const p2DeckId = gameState.players.p2.name;
                   
                   const getDeckData = async (deckId: string) => {
-                      if (!deckId || deckId === 'p1' || deckId === 'p2') return { leader: [], cards: [] };
+                      if (!deckId || deckId === 'p1' || deckId === 'p2') {
+                        logger.warn('local.start', 'Deck ID not selected, using fallback');
+                        return { leader: [], cards: [] };
+                      }
                       const url = deckId.startsWith('db:') 
                           ? `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId.substring(3)}`
                           : `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`;
                       
                       logger.log({ level: 'info', action: 'local.fetch_deck', msg: `Fetching deck: ${deckId}` });
                       const res = await fetch(url);
+                      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                       const data = await res.json();
                       return data.deck || data;
                   };
@@ -445,7 +455,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
               setGameState(res.state); 
           }
       } catch(e) { 
-          logger.error('sandbox.action_fail', String(e)); 
+          const errorMsg = e instanceof Error ? e.message : String(e);
+          logger.error('sandbox.action_fail', errorMsg, { type, params });
+          alert(`アクション失敗: ${errorMsg}`);
       } finally { 
           setIsPending(false); 
       }
@@ -462,7 +474,14 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
               <div style={{ marginBottom: '15px' }}>{gameState.ready_states?.[pid] ? <span style={{ color: '#2ecc71', fontWeight: 'bold' }}>READY</span> : <span style={{ color: '#e74c3c' }}>NOT READY</span>}</div>
               {(pid === myPlayerId || myPlayerId === 'both') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <select style={{ padding: '10px', background: '#fff8e1', border: '2px solid #8b4513', borderRadius: '4px' }} onChange={(e) => handleAction('SET_DECK', { player_id: pid, deck_id: e.target.value })}><option value="">デッキを選択...</option>{deckOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}</select>
+                  <select 
+                    style={{ padding: '10px', background: '#fff8e1', border: '2px solid #8b4513', borderRadius: '4px' }} 
+                    value={gameState.players[pid].name}
+                    onChange={(e) => handleAction('SET_DECK', { player_id: pid, deck_id: e.target.value })}
+                  >
+                    <option value="">デッキを選択...</option>
+                    {deckOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
+                  </select>
                   <button onClick={() => handleAction('READY', { player_id: pid })} style={{ padding: '12px', background: gameState.ready_states?.[pid] ? '#555' : '#d32f2f', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>{gameState.ready_states?.[pid] ? 'キャンセル' : '準備完了'}</button>
                 </div>
               )}
