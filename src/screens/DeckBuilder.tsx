@@ -158,9 +158,7 @@ const CardDetailScreen = ({ card, currentCount, onCountChange, onClose, onNaviga
   );
 };
 
-// ▼ 修正: initialFiltersとonApplyを受け取るように変更
 const FilterModal = ({ initialFilters, onApply, traitList, setList, onClose }: { initialFilters: FilterState, onApply: (f: FilterState) => void, traitList: string[], setList: string[], onClose: () => void }) => {
-  // ▼ 追加: ローカル状態管理
   const [localFilters, setLocalFilters] = useState<FilterState>(initialFilters);
   const [traitSearch, setTraitSearch] = useState('');
 
@@ -179,10 +177,10 @@ const FilterModal = ({ initialFilters, onApply, traitList, setList, onClose }: {
   );
 
   const toggle = (key: keyof FilterState, value: string) => {
-    const current = localFilters[key]; // localFiltersを参照
+    const current = localFilters[key];
     if (Array.isArray(current)) {
       const newArray = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
-      setLocalFilters({ ...localFilters, [key]: newArray }); // setLocalFiltersを更新
+      setLocalFilters({ ...localFilters, [key]: newArray });
     }
   };
 
@@ -212,7 +210,7 @@ const FilterModal = ({ initialFilters, onApply, traitList, setList, onClose }: {
   );
 
   const ColorBtn = ({ colorKey, label, colorCode }: { colorKey: string, label: string, colorCode: string }) => {
-    const isActive = localFilters.color.includes(colorKey); // localFiltersを参照
+    const isActive = localFilters.color.includes(colorKey);
     return (
       <div 
         title={label}
@@ -325,9 +323,7 @@ const FilterModal = ({ initialFilters, onApply, traitList, setList, onClose }: {
           background: '#2a2a2a',
           zIndex: 10
         }}>
-          {/* ▼ 修正: ローカル状態をリセット */}
           <button onClick={handleReset} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #555', background: '#333', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}>リセット</button>
-          {/* ▼ 修正: 決定時に親へ通知 */}
           <button onClick={() => onApply(localFilters)} style={{ flex: 2, padding: '12px', borderRadius: '8px', border: 'none', background: '#e74c3c', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>決定</button>
         </div>
       </div>
@@ -481,6 +477,9 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
     color: [], type: [], attribute: [], traits: [], counter: [], cost: [], power: [], trigger: [], sets: [], sort: 'COST'
   });
   const [searchText, setSearchText] = useState('');
+  // ▼ 追加: 入力用の一時テキスト
+  const [inputText, setInputText] = useState('');
+
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(50);
   const [viewingCard, setViewingCard] = useState<CardData | null>(null);
@@ -567,6 +566,7 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
       res = res.filter(c => filters.sets.some(s => c.uuid.startsWith(s)));
     }
 
+    // ▼ searchText は「Enter」か「虫眼鏡」が押された時のみ更新される値
     if (searchText) {
       const lower = searchText.toLowerCase();
       res = res.filter(c => (c.name?.toLowerCase().includes(lower)) || (c.text?.toLowerCase().includes(lower)));
@@ -611,6 +611,11 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
     }
   };
 
+  // ▼ 検索実行ハンドラ
+  const executeSearch = () => {
+    setSearchText(inputText);
+  };
+
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#222', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '5px 15px', background: '#2a2a2a', color: '#aaa', fontSize: '11px', display: 'flex', justifyContent: 'space-between' }}>
@@ -636,10 +641,17 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
           完了
         </button>
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+          {/* ▼ 修正: inputはinputTextを更新、EnterキーでexecuteSearch */}
           <input 
-            placeholder="キーワード検索" 
-            value={searchText} 
-            onChange={e => setSearchText(e.target.value)} 
+            placeholder="キーワード検索 (Enterで検索)" 
+            value={inputText} 
+            onChange={e => setInputText(e.target.value)} 
+            onKeyDown={e => {
+                if (e.key === 'Enter') {
+                    executeSearch();
+                    (e.target as HTMLInputElement).blur();
+                }
+            }}
             style={{ 
               width: '100%', 
               padding: '10px 10px 10px 35px', 
@@ -651,7 +663,16 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
               boxSizing: 'border-box'
             }} 
           />
-          <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#777', pointerEvents: 'none' }}>🔍</span>
+          {/* ▼ 修正: 虫眼鏡をボタン化してクリック可能に */}
+          <button 
+            onClick={executeSearch}
+            style={{ 
+                position: 'absolute', left: '5px', top: '50%', transform: 'translateY(-50%)', 
+                background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '5px' 
+            }}
+          >
+            🔍
+          </button>
         </div>
         <button 
           onClick={() => setShowFilterModal(true)} 
