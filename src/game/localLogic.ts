@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 
 export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: string): GameState => {
   const setupPlayer = (deck: any, playerId: string, name: string): PlayerState => {
+    // データ取得の優先順位を整理
     const leaderRaw = (deck?.leader && Array.isArray(deck.leader) ? deck.leader[0] : deck?.leader) || 
                       (deck?.cards && deck.cards.find((c: any) => (c.type || '').toUpperCase() === 'LEADER'));
     
@@ -11,7 +12,9 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       name: "Unknown Leader",
       power: 5000,
       ...leaderRaw,
-      card_id: leaderRaw?.card_id || leaderRaw?.number || leaderRaw?.id || "LEADER",
+      // ★修正: バックエンドの 'uuid' (OP01-001等) を card_id として取得
+      card_id: leaderRaw?.uuid || leaderRaw?.card_id || leaderRaw?.number || leaderRaw?.id || "LEADER",
+      // フロントエンド用のユニークIDは別途生成
       uuid: uuidv4(),
       owner_id: playerId,
       is_rest: false,
@@ -23,7 +26,9 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       .filter((c: any) => (c.type || '').toUpperCase() !== 'LEADER')
       .map((c: any) => ({
         ...c,
-        card_id: c.card_id || c.number || c.id,
+        // ★修正: ここも 'uuid' を card_id として取得
+        card_id: c.uuid || c.card_id || c.number || c.id,
+        // フロントエンド用のユニークID
         uuid: uuidv4(),
         owner_id: playerId,
         is_rest: false,
@@ -68,33 +73,30 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
     turn_info: { turn_count: 1, active_player_id: 'p1', current_phase: 'MAIN', winner: null }
   };
 
-  // ▼▼▼ 追加: ログ出力を行うことで未使用エラーを解消 ▼▼▼
+  // ビルドエラー回避のためのログ出力
   logger.log({
     level: 'info',
     action: 'local.init_game',
     msg: 'Local game state initialized',
     payload: { gameId: state.game_id }
   });
-  // ▲▲▲ 追加ここまで ▲▲▲
 
   return state;
 };
 
+// ... moveCardLocal と toggleRestLocal は変更なし ...
 export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' | 'p2', destZone: string, index: number = -1): GameState => {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
   let targetCard: CardInstance | null = null;
-
   for (const pid of ['p1', 'p2'] as const) {
     const p = newState.players[pid];
     if (p.leader?.uuid === cardUuid) { targetCard = p.leader; p.leader = null; break; }
     if (p.stage?.uuid === cardUuid) { targetCard = p.stage; p.stage = null; break; }
-    
     for (const [_, zoneArray] of Object.entries(p.zones)) {
       if (!Array.isArray(zoneArray)) continue;
       const idx = zoneArray.findIndex((c: CardInstance) => c.uuid === cardUuid);
       if (idx !== -1) { targetCard = zoneArray.splice(idx, 1)[0]; break; }
     }
-
     const donKeys = ['don_active', 'don_rested', 'don_attached'] as const;
     for (const key of donKeys) {
       const idx = p[key].findIndex(c => c.uuid === cardUuid);
@@ -102,9 +104,7 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
     }
     if (targetCard) break;
   }
-
   if (!targetCard) return state;
-
   const destPlayer = newState.players[destPid];
   if (destZone === 'leader') { destPlayer.leader = targetCard as LeaderCard; }
   else if (destZone === 'stage') { destPlayer.stage = targetCard as BoardCard; }
@@ -116,13 +116,11 @@ export const moveCardLocal = (state: GameState, cardUuid: string, destPid: 'p1' 
       else zone.splice(index, 0, targetCard);
     }
   }
-
   return newState;
 };
 
 export const toggleRestLocal = (state: GameState, cardUuid: string): GameState => {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
-  
   for (const pid of ['p1', 'p2'] as const) {
     const p = newState.players[pid];
     if (p.leader?.uuid === cardUuid) { p.leader.is_rest = !p.leader.is_rest; break; }
@@ -134,6 +132,5 @@ export const toggleRestLocal = (state: GameState, cardUuid: string): GameState =
     const restedDonIdx = p.don_rested.findIndex(c => c.uuid === cardUuid);
     if (restedDonIdx !== -1) { const card = p.don_rested.splice(restedDonIdx, 1)[0]; card.is_rest = false; p.don_active.push(card); break; }
   }
-
   return newState;
 };
