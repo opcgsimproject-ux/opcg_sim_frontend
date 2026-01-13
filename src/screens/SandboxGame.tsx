@@ -13,6 +13,36 @@ import { API_CONFIG } from '../api/api.config';
 import { logger } from '../utils/logger';
 import { handleLocalAction } from '../game/localActionHandler';
 
+// オフライン用モックデータ (キャッシュがない場合のフォールバック)
+const MOCK_DECKS: Record<string, any> = {
+  'imu.json': {
+    leader: { name: "イム", card_id: "ST01-001", power: 5000, type: "LEADER", life: 5 },
+    cards: Array.from({ length: 50 }, (_, i) => ({
+      name: `聖地マリージョア兵 ${i + 1}`,
+      card_id: `OP01-${String(i + 1).padStart(3, '0')}`,
+      power: 3000 + (i % 5) * 1000,
+      cost: 1 + (i % 5),
+      counter: 1000,
+      type: "CHARACTER",
+      trigger_text: i % 3 === 0 ? "トリガーあり" : "",
+      effect_text: "登場時: カードを1枚引く。"
+    }))
+  },
+  'nami.json': {
+    leader: { name: "ナミ", card_id: "OP03-040", power: 5000, type: "LEADER", life: 5 },
+    cards: Array.from({ length: 50 }, (_, i) => ({
+      name: `クリマ・タクト ${i + 1}`,
+      card_id: `OP03-${String(i + 1).padStart(3, '0')}`,
+      power: 2000 + (i % 4) * 1000,
+      cost: 1 + (i % 4),
+      counter: 2000,
+      type: "EVENT",
+      trigger_text: i % 2 === 0 ? "トリガー: 手札に加える" : "",
+      effect_text: "メイン: 相手のキャラ1枚をレストにする。"
+    }))
+  }
+};
+
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
@@ -76,9 +106,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
   const isActionBlockedByMulligan = useMemo(() => {
     if (!gameState || !isMulliganPhase || myPlayerId === 'both') return false;
-    if (myPlayerId === 'p1') return !(gameState as any).mulligan_finished?.p2 || !(gameState as any).mulligan_finished?.p1;
+    if (myPlayerId === 'p1') return !mulliganStatus.p2 || !mulliganStatus.p1;
     return false;
-  }, [gameState, isMulliganPhase, myPlayerId]);
+  }, [gameState, isMulliganPhase, mulliganStatus, myPlayerId]);
 
   const startLongPress = (card: CardInstance, x: number, y: number) => {
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
@@ -111,48 +141,34 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
         const data = await res.json();
         if (data.success) {
-          // ▼▼▼ 修正: Imu/Namiを除外し、DBのデッキのみを表示 ▼▼▼
-          const filteredDecks = data.decks
-            .filter((d: any) => d.id !== 'imu.json' && d.id !== 'nami.json')
-            .map((d: any) => {
-                // すでに db: がついている場合とついていない場合を考慮
-                const id = d.id.startsWith('db:') ? d.id : `db:${d.id}`;
-                return { id, name: d.name };
-            });
-          setDeckOptions(filteredDecks);
+          setDeckOptions([
+            { id: 'imu.json', name: 'Imu (Offline)' }, 
+            { id: 'nami.json', name: 'Nami (Offline)' }, 
+            ...data.decks.map((d: any) => ({ id: `db:${d.id}`, name: d.name }))
+          ]);
         }
       } catch(e) { 
+        setDeckOptions([
+            { id: 'imu.json', name: 'Imu (Offline)' }, 
+            { id: 'nami.json', name: 'Nami (Offline)' }
+        ]);
         console.error(e); 
       }
     };
     fetchDecks();
   }, []);
 
-  // ▼▼▼ オートセーブの読み込みと保存 ▼▼▼
+  // 初期化ロジック (オートセーブ廃止により簡素化)
   useEffect(() => {
     if (isLocalMode) {
-      const savedData = localStorage.getItem('opcg_sim_autosave');
-      if (savedData) {
-        try {
-          const parsed = JSON.parse(savedData);
-          if (parsed && parsed.game_id) {
-            setGameState(parsed);
-            return;
-          }
-        } catch (e) {
-          logger.error('local.load_fail', 'Failed to parse save data');
-        }
-      }
-
       setGameState({
         game_id: 'local-init',
         room_name: roomName || 'LOCAL',
         status: 'WAITING',
         ready_states: { p1: false, p2: false },
         players: {
-          // ▼▼▼ 修正: デフォルトを空にする ▼▼▼
-          p1: { name: '', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
-          p2: { name: '', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
+          p1: { name: 'imu.json', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
+          p2: { name: 'nami.json', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
         },
         turn_info: { turn_count: 0, active_player_id: 'p1', current_phase: 'SETUP', winner: null }
       });
@@ -186,12 +202,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     initGame();
     return () => { if (ws) ws.close(); };
   }, [isLocalMode]);
-
-  useEffect(() => {
-    if (isLocalMode && gameState && gameState.status === 'PLAYING') {
-      localStorage.setItem('opcg_sim_autosave', JSON.stringify(gameState));
-    }
-  }, [gameState, isLocalMode]);
 
   useEffect(() => {
     if (!pixiContainerRef.current || (gameState && gameState.status === 'WAITING')) return;
@@ -297,8 +307,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     }
 
     if (dragState) app.stage.addChild(dragState.sprite);
-  }, [gameState, isPending, dragState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
+  }, [gameState, isPending, dragState, inspecting, isRotated, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
 
+  // ポインターイベントハンドリング
   useEffect(() => {
     const app = appRef.current;
     if (!app) return;
@@ -444,20 +455,32 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                   const p2DeckId = gameState.players.p2.name;
                   
                   const getDeckData = async (deckId: string) => {
+                      // 1. Mock check
+                      if (MOCK_DECKS[deckId]) return MOCK_DECKS[deckId];
+
+                      // 2. Cache check (デッキデータのみキャッシュ)
+                      const cacheKey = `opcg_deck_${deckId}`;
+                      const cached = localStorage.getItem(cacheKey);
+                      if (cached) {
+                          try {
+                              logger.log({ level: 'info', action: 'local.cache_hit', msg: `Using cached deck: ${deckId}` });
+                              return JSON.parse(cached);
+                          } catch(e) { /* ignore */ }
+                      }
+
                       if (!deckId || deckId === 'p1' || deckId === 'p2') {
-                        logger.warn('local.start', 'Deck ID not selected, using fallback');
                         return { leader: [], cards: [] };
                       }
                       
-                      // ▼▼▼ 修正: モックは廃止し、常にAPIへリクエスト ▼▼▼
                       const url = `${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`;
-                      
-                      logger.log({ level: 'info', action: 'local.fetch_deck', msg: `Fetching deck: ${deckId}` });
-                      
                       const res = await fetch(url);
                       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                       const data = await res.json();
-                      return data.deck || data;
+                      const finalData = data.deck || data;
+
+                      // 3. Save to cache
+                      localStorage.setItem(cacheKey, JSON.stringify(finalData));
+                      return finalData;
                   };
                   
                   const [d1, d2] = await Promise.all([getDeckData(p1DeckId), getDeckData(p2DeckId)]);
@@ -508,16 +531,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         </div>
         <div style={{ marginTop: '40px', display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button onClick={onBack} style={{ padding: '12px 25px', background: '#555', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>退出</button>
-          <button 
-            onClick={() => {
-                localStorage.removeItem('opcg_sim_autosave');
-                handleAction('RESET', {});
-                window.location.reload(); 
-            }} 
-            style={{ padding: '12px 25px', background: '#d35400', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}
-          >
-            データ削除
-          </button>
           {(myPlayerId === 'p1' || myPlayerId === 'both') && <button disabled={!(gameState.ready_states?.p1 && gameState.ready_states?.p2)} onClick={() => handleAction('START', {})} style={{ padding: '12px 50px', background: (gameState.ready_states?.p1 && gameState.ready_states?.p2) ? '#2ecc71' : '#333', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>開始</button>}
         </div>
       </div>
@@ -527,6 +540,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', background: '#000' }}>
       <div ref={pixiContainerRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: inspecting ? 200 : 1 }} />
+      {/* ... (残りのJSXは変更なし) ... */}
       {dropChoice && (
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 10000, background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column' }}>
           <div style={{ background: '#2c3e50', padding: '30px', borderRadius: '15px', border: '2px solid #d4af37', textAlign: 'center', width: '80%', maxWidth: '400px' }}>
