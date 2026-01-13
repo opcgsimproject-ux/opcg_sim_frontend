@@ -12,8 +12,9 @@ export interface InspectOverlayContainer extends PIXI.Container {
 const BASE_CARD_WIDTH = 120;
 const BASE_CARD_HEIGHT = BASE_CARD_WIDTH * LAYOUT_PARAMS.CARD.ASPECT_RATIO;
 
-const DISPLAY_CARD_WIDTH = 70; 
-const CARD_GAP = 15;
+// ▼ 変更: 5枚収まるようにサイズを縮小
+const DISPLAY_CARD_WIDTH = 55; 
+const CARD_GAP = 10;
 const TOTAL_CARD_WIDTH = DISPLAY_CARD_WIDTH + CARD_GAP;
 
 export const createInspectOverlay = (
@@ -31,7 +32,7 @@ export const createInspectOverlay = (
   onMoveToHand: (uuid: string) => void,
   onMoveToTrash: (uuid: string) => void,
   onScrollCallback: (x: number) => void,
-  onShuffle?: () => void // 追加
+  onShuffle?: () => void
 ): InspectOverlayContainer => {
   const container = new PIXI.Container() as InspectOverlayContainer;
 
@@ -125,7 +126,8 @@ export const createInspectOverlay = (
   const cardSprites: { sprite: PIXI.Container, card: CardInstance, originalIndex: number }[] = [];
 
   cards.forEach((card, i) => {
-    const isRevealed = type === 'trash' || type === 'hand' || revealedCardIds.has(card.uuid);
+    // ▼ 変更: 山札(deck)やライフ(life)の場合も、所有者には表向きで表示する
+    const isRevealed = type === 'trash' || type === 'hand' || type === 'deck' || type === 'life' || revealedCardIds.has(card.uuid);
     const displayCard = { ...card, is_face_up: isRevealed };
     
     const cardSprite = createCardContainer(displayCard, BASE_CARD_WIDTH, BASE_CARD_HEIGHT, { 
@@ -148,13 +150,14 @@ export const createInspectOverlay = (
       const btn = new PIXI.Graphics();
       btn.beginFill(color, 0.9);
       btn.lineStyle(1, 0xecf0f1);
-      const btnH = 30;
-      const btnW = BASE_CARD_WIDTH + 10;
+      const btnH = 35; // 少し高さを確保
+      const btnW = BASE_CARD_WIDTH + 20; // 幅を確保
       btn.drawRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 6);
       btn.endFill();
       btn.position.set(0, yPos);
 
-      const btnTxt = new PIXI.Text(label, { fontSize: 16, fill: 'white', fontWeight: 'bold' });
+      // 文字サイズ調整
+      const btnTxt = new PIXI.Text(label, { fontSize: 20, fill: 'white', fontWeight: 'bold' });
       btnTxt.anchor.set(0.5);
       btn.addChild(btnTxt);
       btn.eventMode = 'static';
@@ -163,13 +166,17 @@ export const createInspectOverlay = (
       return btn;
     };
 
-    let btnStartY = BASE_CARD_HEIGHT / 2 + 20;
-    const btnGap = 35;
+    let btnStartY = BASE_CARD_HEIGHT / 2 + 25;
+    const btnGap = 40; // ボタン間隔調整
 
+    // ▼ 変更: deck, life, trash, hand, または公開済みの場合にボタンを表示
     if (isRevealed) {
       cardSprite.addChild(createButton("手札へ", 0x2980b9, btnStartY + btnGap * 0, () => onMoveToHand(card.uuid)));
       cardSprite.addChild(createButton("トラッシュ", 0xc0392b, btnStartY + btnGap * 1, () => onMoveToTrash(card.uuid)));
-      cardSprite.addChild(createButton("デッキ下", 0x34495e, btnStartY + btnGap * 2, () => onMoveToBottom(card.uuid)));
+      
+      // ▼ 追加: ライフの場合は「ライフ下」、それ以外は「デッキ下」
+      const bottomLabel = type === 'life' ? "ライフ下" : "デッキ下";
+      cardSprite.addChild(createButton(bottomLabel, 0x34495e, btnStartY + btnGap * 2, () => onMoveToBottom(card.uuid)));
     }
 
     cardSprite.eventMode = 'static';
