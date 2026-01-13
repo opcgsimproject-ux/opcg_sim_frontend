@@ -8,7 +8,8 @@ import {
   mulliganLocal,
   finishMulliganLocal,
   drawCardLocal,
-  shuffleDeckLocal
+  shuffleDeckLocal,
+  resetGameLocal // 追加
 } from './localLogic';
 import { logger } from '../utils/logger';
 
@@ -20,7 +21,6 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
     payload: params
   });
 
-  // ステート操作は localLogic 側でクローンしてから行うため、ここではそのまま渡す
   switch (actionType) {
     case 'SET_DECK': {
       const newState = JSON.parse(JSON.stringify(state));
@@ -70,7 +70,8 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
       return shuffleDeckLocal(state, params.player_id);
 
     case 'RESET':
-      return createInitialGameState(null, null, state.room_name || 'local-room');
+      // 修正: resetGameLocal を使用して、デッキを再利用する
+      return resetGameLocal(state);
 
     default:
       logger.warn('local_action.unknown', `Action ${actionType} is not implemented locally.`);
