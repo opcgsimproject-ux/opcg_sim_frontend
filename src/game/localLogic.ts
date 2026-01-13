@@ -8,9 +8,9 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
     
     const leader: LeaderCard = {
       name: "Unknown Leader",
-      card_id: "LEADER",
       power: 5000,
       ...leaderData,
+      card_id: leaderData?.card_id || leaderData?.number || leaderData?.id || "LEADER",
       uuid: uuidv4(),
       owner_id: playerId,
       is_rest: false,
@@ -22,10 +22,12 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       .filter((c: any) => (c.type || '').toUpperCase() !== 'LEADER')
       .map((c: any) => ({
         ...c,
+        card_id: c.card_id || c.number || c.id,
         uuid: uuidv4(),
         owner_id: playerId,
         is_rest: false,
-        attached_don: 0
+        attached_don: 0,
+        is_face_up: true
       }));
 
     const shuffled = [...mainCards].sort(() => Math.random() - 0.5);
