@@ -3,11 +3,6 @@ import { API_CONFIG } from '../api/api.config';
 import './GameUI.css'; 
 import { prefetchAllCardImages } from '../utils/imageAssets';
 
-interface DeckOption {
-  id: string;
-  name: string;
-}
-
 interface GameStartProps {
   onStart: (
     p1: string, 
@@ -21,15 +16,9 @@ interface GameStartProps {
 }
 
 const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardList, onLobby }) => {
-  const [deckOptions, setDeckOptions] = useState<DeckOption[]>([]);
-  const [p1Deck, setP1Deck] = useState('imu.json');
-  const [p2Deck, setP2Deck] = useState('nami.json');
-  
-  // ▼ 変更: 'multi' モーダルを追加
-  const [activeModal, setActiveModal] = useState<'none' | 'solo' | 'cpu' | 'multi'>('none');
+  // ▼ 変更: デッキ選択関連のstateを削除
+  const [activeModal, setActiveModal] = useState<'none' | 'multi'>('none');
   const [downloadProgress, setDownloadProgress] = useState<{current: number, total: number} | null>(null);
-  
-  // ▼ 追加: 部屋名入力用
   const [roomName, setRoomName] = useState('');
 
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -60,35 +49,7 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     }
   }, [windowSize, isMobile]);
 
-  useEffect(() => {
-    const fetchDecks = async () => {
-      try {
-        const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
-        const data = await res.json();
-        
-        const defaults = [
-          { id: 'imu.json', name: 'Imu (Default)' },
-          { id: 'nami.json', name: 'Nami (Default)' }
-        ];
-
-        let loadedDecks: DeckOption[] = [];
-        if (data.success && Array.isArray(data.decks)) {
-          loadedDecks = data.decks.map((d: any) => ({
-            id: `db:${d.id}`,
-            name: d.name
-          }));
-        }
-        setDeckOptions([...defaults, ...loadedDecks]);
-      } catch (e) {
-        console.error("Failed to load decks", e);
-        setDeckOptions([
-          { id: 'imu.json', name: 'Imu (Default)' },
-          { id: 'nami.json', name: 'Nami (Default)' }
-        ]);
-      }
-    };
-    fetchDecks();
-  }, []);
+  // ▼ 変更: デッキ一覧取得処理(useEffect)を削除
 
   const handleCacheImages = async () => {
     if (!confirm("全てのカード画像をダウンロードしますか？\n(初回のみ通信量が発生します。Wi-Fi推奨)")) return;
@@ -205,31 +166,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     </div>
   );
 
-  const SetupModal = ({ title, onConfirm }: { title: string, onConfirm: () => void }) => (
-    <div style={styles.modalOverlay}>
-      <div style={styles.modalPanel}>
-        <div style={styles.modalTitle}>{title}</div>
-        <div>
-          <label style={{display:'block', color:'#bdc3c7', fontSize:'12px'}}>Player 1 (あなた)</label>
-          <select value={p1Deck} onChange={(e) => setP1Deck(e.target.value)} style={styles.select}>
-            {deckOptions.map(opt => <option key={`p1-${opt.id}`} value={opt.id}>{opt.name}</option>)}
-          </select>
-        </div>
-        <div style={{textAlign:'center', color:'#95a5a6', fontStyle:'italic'}}>VS</div>
-        <div>
-          <label style={{display:'block', color:'#bdc3c7', fontSize:'12px'}}>Player 2 (相手/CPU)</label>
-          <select value={p2Deck} onChange={(e) => setP2Deck(e.target.value)} style={styles.select}>
-            {deckOptions.map(opt => <option key={`p2-${opt.id}`} value={opt.id}>{opt.name}</option>)}
-          </select>
-        </div>
-        <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
-          <button onClick={() => setActiveModal('none')} style={styles.actionBtn(false)}>キャンセル</button>
-          <button onClick={onConfirm} style={styles.actionBtn(true)}>開始</button>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <div style={styles.container}>
       <div style={styles.bgOverlay}></div>
@@ -255,24 +191,32 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Simulation</div>
             <div style={styles.grid}>
-              <MenuCard label="1人回しモード" desc="Solo Sandbox Mode" onClick={() => setActiveModal('solo')} color="#2ecc71" />
-              {/* ▼ 変更: ロビー直接遷移ではなく、マルチプレイメニューを開く */}
-              <MenuCard label="対戦モード" desc="Online Multiplayer" onClick={() => setActiveModal('multi')} color="#9b59b6" />
-              <MenuCard label="自動モード" desc="VS CPU (Rule Enforced)" onClick={() => setActiveModal('cpu')} color="#e74c3c" />
+              {/* ▼ 変更: クリックで即座に開始 */}
+              <MenuCard 
+                label="1人回しモード" 
+                desc="Solo Sandbox Mode" 
+                onClick={() => onStart('', '', 'sandbox', { role: 'both' })} 
+                color="#2ecc71" 
+              />
+              <MenuCard 
+                label="対戦モード" 
+                desc="Online Multiplayer" 
+                onClick={() => setActiveModal('multi')} 
+                color="#9b59b6" 
+              />
+              {/* ▼ 変更: クリックで即座に開始 */}
+              <MenuCard 
+                label="自動モード" 
+                desc="VS CPU (Rule Enforced)" 
+                onClick={() => onStart('', '', 'normal')} 
+                color="#e74c3c" 
+              />
             </div>
           </div>
         </div>
       </div>
 
-      {activeModal === 'solo' && (
-        <SetupModal title="Solo Sandbox Setup" onConfirm={() => onStart(p1Deck, p2Deck, 'sandbox', { role: 'both' })} />
-      )}
-      
-      {activeModal === 'cpu' && (
-        <SetupModal title="VS CPU Setup" onConfirm={() => onStart(p1Deck, p2Deck, 'normal')} />
-      )}
-
-      {/* ▼ 追加: オンライン対戦用モーダル */}
+      {/* ▼ 変更: SetupModalを削除し、対戦用モーダルのみ簡略化して配置 */}
       {activeModal === 'multi' && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalPanel}>
@@ -287,15 +231,17 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
                 onChange={(e) => setRoomName(e.target.value)}
                 placeholder="部屋名を入力"
                 style={{ ...styles.select, marginTop: 0 }} 
+                autoFocus
+                onKeyDown={(e) => {
+                    // Enterキーで部屋作成
+                    if (e.key === 'Enter' && roomName.trim()) {
+                        onStart('', '', 'sandbox', { role: 'p1', room_name: roomName });
+                    }
+                }}
               />
-              <div style={{ marginTop: '10px' }}>
-                <label style={{ display: 'block', color: '#bdc3c7', fontSize: '10px', marginBottom: '3px' }}>使用デッキ</label>
-                <select value={p1Deck} onChange={(e) => setP1Deck(e.target.value)} style={{ ...styles.select, marginTop: 0 }}>
-                  {deckOptions.map(opt => <option key={`p1-${opt.id}`} value={opt.id}>{opt.name}</option>)}
-                </select>
-              </div>
               <button 
-                onClick={() => onStart(p1Deck, 'nami.json', 'sandbox', { role: 'p1', room_name: roomName })}
+                // ▼ 変更: デッキIDは空文字で開始（SandboxGame側で選択）
+                onClick={() => onStart('', '', 'sandbox', { role: 'p1', room_name: roomName })}
                 disabled={!roomName.trim()}
                 style={{ ...styles.actionBtn(true), width: '100%', marginTop: '15px', opacity: roomName.trim() ? 1 : 0.5 }}
               >
