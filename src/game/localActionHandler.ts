@@ -24,7 +24,29 @@ export const handleLocalAction = (state: GameState, actionType: string, params: 
   switch (actionType) {
     case 'SET_DECK': {
       const newState = JSON.parse(JSON.stringify(state));
-      newState.players[params.player_id as 'p1' | 'p2'].name = params.deck_id;
+      const pid = params.player_id as 'p1' | 'p2';
+      
+      // デッキID（名前）を更新
+      newState.players[pid].name = params.deck_id;
+
+      // ▼ 追加: リーダー情報を更新
+      // SandboxGame側から送られた deckData を使用してリーダーを設定する
+      if (params.deckData && params.deckData.leader) {
+        // deckData.leader はオブジェクトそのものか、配列の場合は最初の要素を使う
+        const leaderData = Array.isArray(params.deckData.leader) 
+          ? params.deckData.leader[0] 
+          : params.deckData.leader;
+          
+        if (leaderData) {
+          // 画面表示に必要な最低限の情報をセット（ゲーム開始時に正式に初期化されるため簡易的でOK）
+          newState.players[pid].leader = {
+            ...leaderData,
+            uuid: `leader-${pid}-${Date.now()}`, // 一意なIDを付与
+            owner_id: params.deck_id
+          };
+        }
+      }
+      
       return newState;
     }
 
