@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import * as PIXI from 'pixi.js';
 import { LAYOUT_CONSTANTS } from '../layout/layout.config';
 import { calculateCoordinates } from '../layout/layoutEngine';
@@ -48,11 +48,7 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
-interface DeckOption {
-  id: string;
-  name: string;
-  leaderId?: string;
-}
+// ▼ 修正: DeckOption の重複定義を削除しました
 
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
 
@@ -83,9 +79,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   const longPressTimerRef = useRef<any>(null);
   const pressStartPosRef = useRef<{x: number, y: number} | null>(null);
   
-  // ▼ 追加: ドラッグ開始待ちの状態管理（タップ判定用）
   const pendingDragRef = useRef<{ card: CardInstance, x: number, y: number } | null>(null);
-  // ▼ 追加: 長押しが成立したかどうかのフラグ
   const longPressTriggeredRef = useRef(false);
 
   const dragStateRef = useRef(dragState);
@@ -133,10 +127,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
       pressStartPosRef.current = { x, y };
       longPressTimerRef.current = setTimeout(() => {
-          // 長押し成立時の処理
           logger.log({ level: 'info', action: 'ui.long_press', msg: `Show detail: ${card.name}`, payload: { uuid: card.uuid } });
           setSelectedCard(card);
-          // ドラッグ状態をキャンセルし、フラグを立てる
           setDragState(null);
           longPressTriggeredRef.current = true;
           longPressTimerRef.current = null;
@@ -150,6 +142,21 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       }
       pressStartPosRef.current = null;
   };
+
+  // ▼ 修正: startDrag を useCallback で定義し、複数の useEffect から参照可能にする
+  const startDrag = useCallback((card: CardInstance, startPoint: { x: number, y: number }) => {
+    const app = appRef.current;
+    if (!app) return;
+    const { width: W, height: H } = app.screen;
+    const coords = calculateCoordinates(W, H);
+    
+    const ghost = createCardContainer(card, coords.CW, coords.CH, { onClick: () => {}, isOpponent: false });
+    ghost.position.set(startPoint.x, startPoint.y); 
+    ghost.alpha = 0.8; 
+    ghost.scale.set(1.1);
+    app.stage.addChild(ghost); 
+    setDragState({ card, sprite: ghost, startPos: startPoint });
+  }, []);
 
   useEffect(() => {
     const fetchDecks = async () => {
@@ -283,27 +290,15 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     bg.beginFill(COLORS.PLAYER_BG).drawRect(0, midY, W, H - midY).endFill();
     app.stage.addChild(bg);
     
-    // startDrag: 実際にドラッグが確定したときに呼ばれる
-    const startDrag = (card: CardInstance, startPoint: { x: number, y: number }) => {
-        const ghost = createCardContainer(card, coords.CW, coords.CH, { onClick: () => {}, isOpponent: false });
-        ghost.position.set(startPoint.x, startPoint.y); ghost.alpha = 0.8; ghost.scale.set(1.1);
-        app.stage.addChild(ghost); 
-        setDragState({ card, sprite: ghost, startPos: startPoint });
-    };
+    // ▼ 修正: startDrag の定義を移動したため、ここでは定義不要
 
     const onCardDown = (e: PIXI.FederatedPointerEvent, card: CardInstance) => {
         if (isPending || dragState || isActionBlockedByMulligan) return;
         
-        // 所有権チェック
         if (myPlayerId !== 'both' && gameState) { const me = gameState.players[myPlayerId as 'p1' | 'p2']; if (me && card.owner_id && card.owner_id !== me.name) return; }
         
-        // 長押しフラグをリセット
         longPressTriggeredRef.current = false;
-        
-        // 長押しタイマー開始
         startLongPress(card, e.global.x, e.global.y);
-        
-        // ▼ 変更: すぐにドラッグを開始せず、待機状態にする
         pendingDragRef.current = { card, x: e.global.x, y: e.global.y };
     };
 
@@ -341,29 +336,26 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     }
 
     if (dragState) app.stage.addChild(dragState.sprite);
-  }, [gameState, isPending, dragState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
+  }, [gameState, isPending, dragState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan, startDrag]);
 
   useEffect(() => {
     const app = appRef.current;
     if (!app) return;
     
     const onPointerMove = (e: PointerEvent) => { 
-        // 長押しキャンセル判定
         if (pressStartPosRef.current) {
             const dx = e.clientX - pressStartPosRef.current.x;
             const dy = e.clientY - pressStartPosRef.current.y;
             if (Math.sqrt(dx * dx + dy * dy) > 10) cancelLongPress();
         }
 
-        // ▼ 追加: ドラッグ開始判定 (一定距離動いたら開始)
         if (pendingDragRef.current && !dragState) {
              const dx = e.clientX - pendingDragRef.current.x;
              const dy = e.clientY - pendingDragRef.current.y;
              if (Math.sqrt(dx * dx + dy * dy) > 10) {
-                 // 閾値を超えたらドラッグ開始
                  startDrag(pendingDragRef.current.card, { x: pendingDragRef.current.x, y: pendingDragRef.current.y });
-                 pendingDragRef.current = null; // 待機状態解除
-                 cancelLongPress(); // ドラッグしたら長押し詳細表示はキャンセル
+                 pendingDragRef.current = null;
+                 cancelLongPress();
              }
         }
 
@@ -375,19 +367,13 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     const onPointerUp = async (e: PointerEvent) => {
         cancelLongPress();
         
-        // --- ケース1: ドラッグ中だった場合 (ドロップ処理) ---
         if (dragState) {
             const card = dragState.card; const endPos = { x: e.clientX, y: e.clientY };
             if ((card.type || '').toUpperCase() === 'LEADER') { setDragState(null); return; }
             
-            // ... (既存のドロップ判定ロジック) ...
-            const distFromStart = Math.sqrt(Math.pow(endPos.x - dragState.startPos.x, 2) + Math.pow(endPos.y - dragState.startPos.y, 2));
+            // ▼ 修正: 未使用の distFromStart 変数定義を削除
 
-            // オーバーレイ内でのドロップ判定などはここに...
-            // (ここでは既存のロジックをそのまま流用します)
             if (inspecting && overlayRef.current) {
-                 // ... Inspect Overlay Drop Logic ...
-                 // 簡略化のため、既存コードと同じ処理
                  const { width: W, height: H } = app.screen;
                  const PANEL_W = Math.min(W * 0.95, 1200);
                  const PANEL_X = (W - PANEL_W) / 2;
@@ -413,7 +399,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                  }
             }
 
-            // ゾーン判定
             const { width: W, height: H } = app.screen; const coords = calculateCoordinates(W, H); const midY = H / 2;
             const isTopArea = endPos.y < midY; let destPid = isTopArea ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1');
             
@@ -439,7 +424,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                 return null;
             };
 
-            // ドン付与チェック
             if (card.card_id === "DON" || card.type === "DON") {
                 const targetPlayer = destPid === 'p1' ? gameState?.players.p1 : gameState?.players.p2;
                 if (targetPlayer) {
@@ -494,18 +478,15 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         // --- ケース2: タップ (ドラッグせずに離した) ---
         if (pendingDragRef.current) {
             const card = pendingDragRef.current.card;
-            pendingDragRef.current = null; // 待機状態解除
+            pendingDragRef.current = null;
 
-            // 長押し成功済みの場合はタップ処理をしない
             if (longPressTriggeredRef.current) return;
 
-            // リーダーのレスト切り替え
             if ((card.type || '').toUpperCase() === 'LEADER') { 
                 handleAction('TOGGLE_REST', { card_uuid: card.uuid }); 
                 return; 
             }
 
-            // Inspectモードでの選択
             if (inspecting) {
                 if (inspectingCards.some(c => c.uuid === card.uuid)) {
                     const newSet = new Set(revealedCardIds);
@@ -516,17 +497,14 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                 return;
             }
 
-            // 通常のカード操作 (デッキ/ライフ/トラッシュ確認 or レスト切替)
-            const { width: W, height: H } = app.screen; const midY = H / 2;
+            const { height: H } = app.screen; const midY = H / 2;
             const isTopArea = e.clientY < midY; 
             let destPid = isTopArea ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1');
             
-            // 相手エリアのカードは操作しない (閲覧のみ)
             if (myPlayerId !== 'both' && destPid !== myPlayerId) return;
 
             const destP = destPid === 'p1' ? gameState?.players.p1 : gameState?.players.p2;
             
-            // デッキ/ライフ/トラッシュのクリック判定
             const findInStack = (p: any) => { if (p.zones.deck?.some((c: any) => c.uuid === card.uuid)) return { type: 'deck' }; if (p.zones.life?.some((c: any) => c.uuid === card.uuid)) return { type: 'life' }; if (p.zones.trash?.some((c: any) => c.uuid === card.uuid)) return { type: 'trash' }; return null; };
             if (destP) { 
                 const stackInfo = findInStack(destP); 
@@ -538,7 +516,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                 } 
             }
 
-            // レスト切り替え (手札以外)
             if (destP && !destP.zones.hand.some(c => c.uuid === card.uuid)) {
                  handleAction('TOGGLE_REST', { card_uuid: card.uuid });
             }
@@ -546,7 +523,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     };
     window.addEventListener('pointermove', onPointerMove); window.addEventListener('pointerup', onPointerUp);
     return () => { window.removeEventListener('pointermove', onPointerMove); window.removeEventListener('pointerup', onPointerUp); };
-  }, [dragState, gameState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
+  }, [dragState, gameState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan, startDrag]);
 
   const handleReplacement = async (trashCardUuids: string[]) => {
     if (!replacementState || trashCardUuids.length === 0 || !gameState) return;
