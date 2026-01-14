@@ -12,7 +12,9 @@ import type { GameState, CardInstance } from '../game/types';
 import { API_CONFIG } from '../api/api.config';
 import { logger } from '../utils/logger';
 import { handleLocalAction } from '../game/localActionHandler';
+import { getCardImageUrl } from '../utils/imageAssets';
 
+// --- 追加: GameStartと共通のモックデッキ定義 ---
 const MOCK_DECKS: Record<string, any> = {
   'imu.json': {
     leader: { name: "イム", card_id: "ST01-001", power: 5000, type: "LEADER", life: 5 },
@@ -136,7 +138,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
   useEffect(() => {
     const fetchDecks = async () => {
-      // JSONベースのモックデッキ（imu.json, nami.json）を非表示にするため空配列から開始
       const options: {id: string, name: string}[] = [];
 
       try {
@@ -154,7 +155,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
         const data = await res.json();
         if (data.success) {
-          // サーバーからのリストからも .json で終わるものは除外する
           data.decks.forEach((d: any) => { 
             if (!d.id.endsWith('.json')) {
               options.push({ id: `db:${d.id}`, name: d.name }); 
@@ -369,8 +369,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                  const HEADER_HEIGHT = 40;
                  const SCROLL_ZONE_HEIGHT = 70;
                  if (endPos.y > PANEL_Y + HEADER_HEIGHT && endPos.y < PANEL_Y + PANEL_H - SCROLL_ZONE_HEIGHT) {
-                     const DISPLAY_CARD_WIDTH = 70; 
-                     const CARD_GAP = 15;
+                     const DISPLAY_CARD_WIDTH = 55; 
+                     const CARD_GAP = 10;
                      const TOTAL_CARD_WIDTH = DISPLAY_CARD_WIDTH + CARD_GAP;
                      const listStartX = PANEL_X; 
                      const relativeX = endPos.x + inspectScrollXRef.current - listStartX;
@@ -481,34 +481,82 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       } catch(e) { alert('エラー'); } finally { setIsPending(false); }
   };
 
+  // ▼ 変更: 待機画面（デッキ選択・READY画面）のレイアウト修正
   if (gameState && gameState.status === 'WAITING') {
     return (
-      <div style={{ width: '100vw', height: '100vh', background: '#1a0b0b', color: '#f0e6d2', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', boxSizing: 'border-box', overflowY: 'auto' }}>
-        <h1 style={{ color: '#ffd700', fontSize: isMobile ? '24px' : '32px', marginBottom: '20px' }}>ROOM: {gameState.room_name}</h1>
-        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '30px', width: '100%', maxWidth: '900px', justifyContent: 'center' }}>
+      <div style={{ width: '100vw', height: '100vh', background: 'radial-gradient(circle at center, #2c3e50 0%, #000000 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box' }}>
+        <div style={{ 
+          background: '#2c3e50', padding: '30px', borderRadius: '12px', border: '2px solid #7f8c8d', 
+          width: '90%', maxWidth: '500px', display: 'flex', flexDirection: 'column', gap: '20px', 
+          boxShadow: '0 10px 30px rgba(0,0,0,0.5)', color: '#ecf0f1'
+        }}>
+          <h2 style={{ color: '#f1c40f', fontSize: '24px', fontWeight: 'bold', textAlign: 'center', borderBottom: '1px solid #7f8c8d', paddingBottom: '10px', margin: 0 }}>
+            {gameState.room_name || 'GAME SETUP'}
+          </h2>
+
           {(['p1', 'p2'] as const).map(pid => (
-            <div key={pid} style={{ background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '12px', border: '2px solid #5d4037', flex: 1, textAlign: 'center', maxWidth: isMobile ? '100%' : '350px' }}>
-              <h2 style={{ fontSize: '18px', marginBottom: '10px' }}>{pid.toUpperCase()}: {gameState.players[pid].name}</h2>
-              <div style={{ marginBottom: '15px' }}>{gameState.ready_states?.[pid] ? <span style={{ color: '#2ecc71', fontWeight: 'bold' }}>READY</span> : <span style={{ color: '#e74c3c' }}>NOT READY</span>}</div>
-              {(pid === myPlayerId || myPlayerId === 'both') && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div key={pid} style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ color: '#bdc3c7', fontSize: '12px', fontWeight: 'bold' }}>
+                  {pid === 'p1' ? 'Player 1' : 'Player 2'}
+                </label>
+                {gameState.ready_states?.[pid] ? (
+                  <span style={{ color: '#2ecc71', fontSize: '10px', fontWeight: 'bold' }}>READY</span>
+                ) : (
+                  <span style={{ color: '#e74c3c', fontSize: '10px' }}>NOT READY</span>
+                )}
+              </div>
+              
+              {(pid === myPlayerId || myPlayerId === 'both') ? (
+                <div style={{ display: 'flex', gap: '10px' }}>
                   <select 
-                    style={{ padding: '10px', background: '#fff8e1', border: '2px solid #8b4513', borderRadius: '4px' }} 
+                    style={{ flex: 1, padding: '10px', background: '#2a1a1a', color: '#f0e6d2', border: '1px solid #5d4037', borderRadius: '4px', fontSize: '14px' }} 
                     value={gameState.players[pid].name}
                     onChange={(e) => handleAction('SET_DECK', { player_id: pid, deck_id: e.target.value })}
                   >
                     <option value="">デッキを選択...</option>
                     {deckOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
                   </select>
-                  <button onClick={() => handleAction('READY', { player_id: pid })} style={{ padding: '12px', background: gameState.ready_states?.[pid] ? '#555' : '#d32f2f', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>{gameState.ready_states?.[pid] ? 'キャンセル' : '準備完了'}</button>
+                  <button 
+                    onClick={() => handleAction('READY', { player_id: pid })} 
+                    style={{ 
+                      padding: '0 15px', 
+                      background: gameState.ready_states?.[pid] ? '#2ecc71' : '#95a5a6', 
+                      color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' 
+                    }}
+                  >
+                    {gameState.ready_states?.[pid] ? 'OK' : 'SET'}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', color: '#7f8c8d', fontSize: '14px', textAlign: 'center' }}>
+                  {gameState.players[pid].name ? 'Deck Selected' : 'Selecting...'}
                 </div>
               )}
             </div>
           ))}
-        </div>
-        <div style={{ marginTop: '40px', display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button onClick={onBack} style={{ padding: '12px 25px', background: '#555', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>退出</button>
-          {(myPlayerId === 'p1' || myPlayerId === 'both') && <button disabled={!(gameState.ready_states?.p1 && gameState.ready_states?.p2)} onClick={() => handleAction('START', {})} style={{ padding: '12px 50px', background: (gameState.ready_states?.p1 && gameState.ready_states?.p2) ? '#2ecc71' : '#333', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>開始</button>}
+
+          <div style={{ textAlign: 'center', color: '#95a5a6', fontStyle: 'italic', margin: '-10px 0' }}>VS</div>
+
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <button onClick={onBack} style={{ flex: 1, padding: '12px', background: 'transparent', border: '1px solid #95a5a6', color: '#95a5a6', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+              退出
+            </button>
+            {(myPlayerId === 'p1' || myPlayerId === 'both') && (
+              <button 
+                disabled={!(gameState.ready_states?.p1 && gameState.ready_states?.p2)} 
+                onClick={() => handleAction('START', {})} 
+                style={{ 
+                  flex: 1, padding: '12px', 
+                  background: (gameState.ready_states?.p1 && gameState.ready_states?.p2) ? '#e67e22' : '#34495e', 
+                  color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', 
+                  cursor: (gameState.ready_states?.p1 && gameState.ready_states?.p2) ? 'pointer' : 'not-allowed'
+                }}
+              >
+                GAME START
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
