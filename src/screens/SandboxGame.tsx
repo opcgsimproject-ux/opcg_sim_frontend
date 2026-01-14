@@ -48,11 +48,7 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
-interface DeckOption {
-  id: string;
-  name: string;
-  leaderId?: string;
-}
+// ▼ 修正: ここにあった重複定義 interface DeckOption { ... } を削除しました
 
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
 
@@ -437,7 +433,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             setDragState(null); return;
         }
         
-        // ▼ 修正: detectedZone が null の場合（フィールドへのドロップ）も処理対象にする
         const detectedZone = checkZone(isTopArea);
         
         if (detectedZone === 'deck' || detectedZone === 'life') { 
@@ -446,7 +441,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             return; 
         } 
         
-        // detectedZone が null なら field とみなす
         destZone = detectedZone || 'field';
         
         if (destZone === 'field') {
@@ -495,7 +489,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           let localParams = { ...params };
           const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId;
 
-          // ▼ 共通: デッキデータ取得関数
           const getDeckData = async (deckId: string) => {
               if (!deckId) return { leader: [], cards: [] };
               if (MOCK_DECKS[deckId]) return MOCK_DECKS[deckId];
@@ -512,7 +505,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
               return finalData;
           };
 
-          // ▼ 1人回し用: SET_DECK時にデータをロードして渡す
           if (isLocalMode && type === 'SET_DECK') {
               const deckData = await getDeckData(params.deck_id);
               localParams.deckData = deckData;
@@ -534,7 +526,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       } catch(e) { console.error(e); alert('アクションエラー'); } finally { setIsPending(false); }
   };
 
-  // --- 待機画面のレンダリング ---
   if (gameState && gameState.status === 'WAITING') {
     return (
       <div style={{ width: '100vw', height: '100vh', background: 'radial-gradient(circle at center, #2c3e50 0%, #000000 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box' }}>
@@ -649,7 +640,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     );
   }
 
-  // --- ゲーム画面のレンダリング (変更なし) ---
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', background: '#000' }}>
       <div ref={pixiContainerRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: inspecting ? 200 : 1 }} />
