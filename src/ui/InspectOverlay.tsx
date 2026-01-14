@@ -36,38 +36,43 @@ export const createInspectOverlay = (
 ): InspectOverlayContainer => {
   const container = new PIXI.Container() as InspectOverlayContainer;
 
-  // 背景
+  // 背景 (少し薄くして盤面を見やすくする)
   const bg = new PIXI.Graphics();
-  bg.beginFill(0x000000, 0.2); 
+  bg.beginFill(0x000000, 0.1); 
   bg.drawRect(0, 0, W, H);
   bg.endFill();
   bg.eventMode = 'static';
   bg.on('pointerdown', onClose);
   container.addChild(bg);
 
-  // --- レイアウト定数 ---
+  // --- レイアウト定数と自動計算 ---
   const PADDING = 20;
-  const HEADER_HEIGHT = 130; 
-  const SCROLL_ZONE_HEIGHT = 70;
+  const HEADER_HEIGHT = 120; // ボタン追加分を確保
+  const SCROLL_ZONE_HEIGHT = 50; // 少しスリム化
   
-  // ▼ 変更: コンテンツ（カード+ボタン）の必要高さを計算
-  // カード高さ(約167px) + ボタン群(約130px) + 余白
-  const MIN_CONTENT_HEIGHT = BASE_CARD_HEIGHT + 150; 
-  const REQUIRED_PANEL_H = HEADER_HEIGHT + SCROLL_ZONE_HEIGHT + MIN_CONTENT_HEIGHT;
-  
-  // ▼ 変更: 画面高さを上限(90%)としつつ、必要な高さを確保する
-  const PANEL_H = Math.min(H * 0.95, Math.max(REQUIRED_PANEL_H, 500));
+  // ボタン配置用の定数
+  const BTN_GAP = 38; // ボタン間隔を少し詰める
+  const BTNS_START_Y = BASE_CARD_HEIGHT / 2 + 20;
+  // ボタン3つ分 + カード下半分 + 余白 を考慮したリストエリアの必要高さ
+  // カード中心(0)から下方向へ: (Height/2) + 20 + (38*2) + ボタン高さ(35)/2 ≈ 84 + 20 + 76 + 18 ≈ 200px
+  // カード中心から上方向へ: (Height/2) ≈ 84px
+  // 合計 ≈ 284px -> 余裕を見て310px確保
+  const REQUIRED_LIST_H = 310;
+
+  // 全体の高さを計算 (画面の85%を超えないように制限)
+  const CALCULATED_H = HEADER_HEIGHT + SCROLL_ZONE_HEIGHT + REQUIRED_LIST_H;
+  const PANEL_H = Math.min(H * 0.85, CALCULATED_H);
   
   const PANEL_W = Math.min(W * 0.95, 1200);
   const PANEL_X = (W - PANEL_W) / 2;
-  const PANEL_Y = (H - PANEL_H) / 2; // 画面中央に配置
+  const PANEL_Y = (H - PANEL_H) / 2; // 画面中央
 
-  const CARD_AREA_Y = HEADER_HEIGHT + PADDING;
+  const CARD_AREA_Y = HEADER_HEIGHT; // パディング除外して詰める
   const LIST_H = PANEL_H - HEADER_HEIGHT - SCROLL_ZONE_HEIGHT;
   
-  // パネル背景
+  // パネル背景 (少し透明度を上げて盤面を見えやすく)
   const panel = new PIXI.Graphics();
-  panel.beginFill(0x1a1a1a, 0.98);
+  panel.beginFill(0x1a1a1a, 0.9); // 0.98 -> 0.9
   panel.lineStyle(2, 0x444444);
   panel.drawRoundedRect(0, 0, PANEL_W, PANEL_H, 12);
   panel.endFill();
@@ -90,11 +95,10 @@ export const createInspectOverlay = (
   panel.addChild(closeBtn);
 
   if (type !== 'trash') {
-    // --- 2行目: 基本アクション (Reveal All / Shuffle) ---
+    // --- 2行目: 基本アクション ---
     const ROW2_Y = 50;
     let btnX = PADDING; 
 
-    // REVEAL ALL
     const revealBtn = new PIXI.Container();
     const rBg = new PIXI.Graphics().beginFill(0x27ae60).drawRoundedRect(0, 0, 100, 30, 4).endFill();
     const rTxt = new PIXI.Text("REVEAL ALL", { fontSize: 12, fill: 'white', fontWeight: 'bold' });
@@ -107,7 +111,6 @@ export const createInspectOverlay = (
     panel.addChild(revealBtn);
     btnX += 110;
 
-    // SHUFFLE (Deckのみ)
     if (type === 'deck' && onShuffle) {
         const shufBtn = new PIXI.Container();
         const sBg = new PIXI.Graphics().beginFill(0xe67e22).drawRoundedRect(0, 0, 100, 30, 4).endFill();
@@ -122,7 +125,7 @@ export const createInspectOverlay = (
         btnX += 110;
     }
 
-    // --- 3行目: 枚数指定オープンボタン (Deckのみ) ---
+    // --- 3行目: 枚数指定オープン ---
     if (type === 'deck' && onRevealTop) {
       const ROW3_Y = 90;
       let startX = PADDING;
@@ -202,15 +205,12 @@ export const createInspectOverlay = (
       return btn;
     };
 
-    let btnStartY = BASE_CARD_HEIGHT / 2 + 25;
-    const btnGap = 40;
-
     if (isRevealed) {
-      cardSprite.addChild(createButton("手札へ", 0x2980b9, btnStartY + btnGap * 0, () => onMoveToHand(card.uuid)));
-      cardSprite.addChild(createButton("トラッシュ", 0xc0392b, btnStartY + btnGap * 1, () => onMoveToTrash(card.uuid)));
+      cardSprite.addChild(createButton("手札へ", 0x2980b9, BTNS_START_Y + BTN_GAP * 0, () => onMoveToHand(card.uuid)));
+      cardSprite.addChild(createButton("トラッシュ", 0xc0392b, BTNS_START_Y + BTN_GAP * 1, () => onMoveToTrash(card.uuid)));
       
       const bottomLabel = type === 'life' ? "ライフ下" : "デッキ下";
-      cardSprite.addChild(createButton(bottomLabel, 0x34495e, btnStartY + btnGap * 2, () => onMoveToBottom(card.uuid)));
+      cardSprite.addChild(createButton(bottomLabel, 0x34495e, BTNS_START_Y + BTN_GAP * 2, () => onMoveToBottom(card.uuid)));
     }
 
     cardSprite.eventMode = 'static';
@@ -276,7 +276,6 @@ export const createInspectOverlay = (
 
   container.updateScroll = (x: number) => { currentScrollX = x; container.updateLayout(null, null); updateScrollBar(); };
   
-  // ▼ 変更: レイアウト更新ロジックでカードのY位置を固定
   container.updateLayout = (draggingGlobalX: number | null, draggingUuid: string | null) => {
     let gapIndex = -1;
     const listStartX = PANEL_X + container.x;
@@ -301,9 +300,9 @@ export const createInspectOverlay = (
       const X_OFFSET = TOTAL_CARD_WIDTH / 2 + 20;
       const targetX = visualIndex * TOTAL_CARD_WIDTH + X_OFFSET - currentScrollX;
       
-      // ▼ 変更: カード配置を「垂直中央」ではなく「上詰め」にする
-      // ボタンが下に伸びるため、カード中心をリストエリアの上の方に置く
-      const targetY = BASE_CARD_HEIGHT / 2 + 20; 
+      // ▼ 変更: カードを中心ではなく「少し上寄り」に配置し、下のボタン用スペースを空ける
+      // リストエリア(LIST_H)の上から 90px くらいの位置にカード中心を置く
+      const targetY = BASE_CARD_HEIGHT / 2 + 10;
       sprite.position.set(targetX, targetY);
     });
   };
