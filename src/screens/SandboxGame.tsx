@@ -48,8 +48,6 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
-// ▼ 修正: ここにあった重複定義 interface DeckOption { ... } を削除しました
-
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
 
 export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomName, onBack }: SandboxGameProps) => {
@@ -443,6 +441,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         
         destZone = detectedZone || 'field';
         
+        // ▼ 追加: 5枚制限チェック
         if (destZone === 'field') {
             const destP = destPid === 'p1' ? gameState?.players.p1 : gameState?.players.p2;
             if (destP && destP.zones.field.length >= 5) {
@@ -469,16 +468,42 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     return () => { window.removeEventListener('pointermove', onPointerMove); window.removeEventListener('pointerup', onPointerUp); };
   }, [dragState, gameState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
 
+  // ▼ 変更: ローカル計算で連続更新するように修正
   const handleReplacement = async (trashCardUuids: string[]) => {
-    if (!replacementState || trashCardUuids.length === 0) return;
+    if (!replacementState || trashCardUuids.length === 0 || !gameState) return;
     const { card, destPid } = replacementState;
     const trashUuid = trashCardUuids[0];
+    const pid = myPlayerId === 'both' ? destPid : myPlayerId;
 
-    await handleAction('MOVE_CARD', { card_uuid: trashUuid, dest_player_id: destPid, dest_zone: 'trash' });
-    
-    await handleAction('MOVE_CARD', { card_uuid: card.uuid, dest_player_id: destPid, dest_zone: 'field' });
-    
+    let tempState = gameState;
+
+    const trashParams = { 
+      card_uuid: trashUuid, 
+      dest_player_id: destPid, 
+      dest_zone: 'trash', 
+      player_id: pid 
+    };
+    tempState = handleLocalAction(tempState, 'MOVE_CARD', trashParams);
+
+    const fieldParams = { 
+      card_uuid: card.uuid, 
+      dest_player_id: destPid, 
+      dest_zone: 'field', 
+      player_id: pid 
+    };
+    tempState = handleLocalAction(tempState, 'MOVE_CARD', fieldParams);
+
+    setGameState(tempState);
     setReplacementState(null);
+
+    if (!isLocalMode && activeGameId) {
+      try {
+        await apiClient.sendSandboxAction(activeGameId, { action_type: 'MOVE_CARD', ...trashParams });
+        await apiClient.sendSandboxAction(activeGameId, { action_type: 'MOVE_CARD', ...fieldParams });
+      } catch (e) {
+        console.error("Failed to sync replacement actions", e);
+      }
+    }
   };
 
   const handleAction = async (type: string, params: any) => {
