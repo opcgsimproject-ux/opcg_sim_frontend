@@ -12,8 +12,6 @@ import type { GameState, CardInstance } from '../game/types';
 import { API_CONFIG } from '../api/api.config';
 import { logger } from '../utils/logger';
 import { handleLocalAction } from '../game/localActionHandler';
-// 修正: 未使用のインポートを削除
-// import { getCardImageUrl } from '../utils/imageAssets';
 
 const MOCK_DECKS: Record<string, any> = {
   'imu.json': {
@@ -58,7 +56,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   const [dragState, setDragState] = useState<DragState>(null);
   const [isPending, setIsPending] = useState(false);
   const [deckOptions, setDeckOptions] = useState<{id: string, name: string}[]>([]);
-  // 修正: 未使用の isMobile ステートを削除
   const [inspecting, setInspecting] = useState<{ type: 'deck' | 'life' | 'trash', pid: string } | null>(null);
   const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(new Set());
   const [layoutCoords, setLayoutCoords] = useState<{ x: number, y: number } | null>(null);
@@ -130,8 +127,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       pressStartPosRef.current = null;
   };
 
-  // 修正: 未使用の resize effect (isMobile更新用) を削除
-
   useEffect(() => {
     const fetchDecks = async () => {
       const options: {id: string, name: string}[] = [];
@@ -199,6 +194,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
+                    // ▼ 修正: 対戦相手の操作等でサーバーから状態更新が来た場合のみ反映する
+                    // (自分の操作時はローカル更新が先行しているため、整合性が取れていれば上書きされても問題ない)
                     if (data.type === 'STATE_UPDATE') setGameState(data.state);
                 } catch(e) { logger.error('ws.parse_error', String(e)); }
             };
@@ -446,35 +443,42 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       if (!isLocalMode && !activeGameId) return;
       setIsPending(true);
       try { 
-          if (isLocalMode) {
-              let localParams = { ...params };
-              if (type === 'START') {
-                  const p1DeckId = gameState.players.p1.name;
-                  const p2DeckId = gameState.players.p2.name;
-                  const getDeckData = async (deckId: string) => {
-                      if (MOCK_DECKS[deckId]) return MOCK_DECKS[deckId];
-                      let cacheKey = `opcg_deck_${deckId}`;
-                      if (deckId.startsWith('db:')) cacheKey = `opcg_deck_${deckId.substring(3)}`;
-                      const cached = localStorage.getItem(cacheKey);
-                      if (cached) { try { return JSON.parse(cached); } catch(e) {} }
-                      if (!deckId.startsWith('db:') && !['imu.json', 'nami.json'].includes(deckId)) return { leader: [], cards: [] };
-                      const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`);
-                      if (!res.ok) throw new Error();
-                      const data = await res.json();
-                      const finalData = data.deck || data;
-                      localStorage.setItem(cacheKey, JSON.stringify(finalData));
-                      return finalData;
-                  };
-                  const [d1, d2] = await Promise.all([getDeckData(p1DeckId), getDeckData(p2DeckId)]);
-                  localParams.p1Deck = d1; localParams.p2Deck = d2;
-              }
-              setGameState(handleLocalAction(gameState, type, localParams));
-          } else {
-              const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId; 
-              const res = await apiClient.sendSandboxAction(activeGameId!, { action_type: type, player_id: pid, ...params }); 
-              setGameState(res.state); 
+          // ▼ 変更: 対戦モードでもローカルロジックを使って状態計算を行う
+          let localParams = { ...params };
+          const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId;
+
+          // STARTアクション時のデッキデータ準備 (オンラインでもローカルでデータを用意する)
+          if (type === 'START') {
+              const p1DeckId = gameState.players.p1.name;
+              const p2DeckId = gameState.players.p2.name;
+              const getDeckData = async (deckId: string) => {
+                  if (MOCK_DECKS[deckId]) return MOCK_DECKS[deckId];
+                  let cacheKey = `opcg_deck_${deckId}`;
+                  if (deckId.startsWith('db:')) cacheKey = `opcg_deck_${deckId.substring(3)}`;
+                  const cached = localStorage.getItem(cacheKey);
+                  if (cached) { try { return JSON.parse(cached); } catch(e) {} }
+                  if (!deckId.startsWith('db:') && !['imu.json', 'nami.json'].includes(deckId)) return { leader: [], cards: [] };
+                  const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`);
+                  if (!res.ok) throw new Error();
+                  const data = await res.json();
+                  const finalData = data.deck || data;
+                  localStorage.setItem(cacheKey, JSON.stringify(finalData));
+                  return finalData;
+              };
+              const [d1, d2] = await Promise.all([getDeckData(p1DeckId), getDeckData(p2DeckId)]);
+              localParams.p1Deck = d1; localParams.p2Deck = d2;
           }
-      } catch(e) { alert('エラー'); } finally { setIsPending(false); }
+
+          // 1. ローカルで状態更新 (即時反映)
+          const newState = handleLocalAction(gameState, type, { ...localParams, player_id: pid });
+          setGameState(newState);
+
+          // 2. 対戦モードならサーバーへアクションを通知 (同期用)
+          if (!isLocalMode) {
+              await apiClient.sendSandboxAction(activeGameId!, { action_type: type, player_id: pid, ...params }); 
+              // サーバーからのレスポンス(res.state)は無視し、WebSocketからの更新を待つ
+          }
+      } catch(e) { console.error(e); alert('アクションエラー'); } finally { setIsPending(false); }
   };
 
   if (gameState && gameState.status === 'WAITING') {
