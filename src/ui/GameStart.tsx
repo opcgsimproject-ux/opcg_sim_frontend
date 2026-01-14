@@ -26,6 +26,8 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
   const [p2Deck, setP2Deck] = useState('nami.json');
   const [roomName, setRoomName] = useState('');
   const [showRoomCreateModal, setShowRoomCreateModal] = useState(false);
+  // ▼ 追加: CPU設定画面の表示フラグ
+  const [showCpuSetup, setShowCpuSetup] = useState(false);
   
   const [downloadProgress, setDownloadProgress] = useState<{current: number, total: number} | null>(null);
   
@@ -105,7 +107,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       fontSize: isMobile ? '40px' : '60px', 
       fontWeight: '900', 
       marginBottom: '30px', 
-      // ▼ 修正: 上部に余白を追加して全体を下にずらす
       marginTop: '80px',
       background: 'linear-gradient(to bottom, #ffd700, #b8860b, #8b4513)', 
       WebkitBackgroundClip: 'text', 
@@ -126,7 +127,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     cardDesc: { fontSize: '14px', color: '#5d4037', textAlign: 'center' as const, opacity: 0.8 },
     secondaryActions: {
       display: 'flex', flexWrap: 'wrap' as const, gap: '10px', justifyContent: 'center', width: '100%', maxWidth: '800px', zIndex: 1, 
-      // ▼ 修正: 下の余白を詰める (40px -> 15px)
       marginBottom: '15px'
     },
     subBtn: { background: 'rgba(255,255,255,0.05)', border: '1px solid #d4af37', color: '#d4af37', padding: '10px 20px', fontSize: '14px', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer', fontFamily: 'inherit' },
@@ -135,33 +135,36 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       width: '100%', maxWidth: '500px', background: 'rgba(0,0,0,0.4)', border: '1px dashed #5d4037', borderRadius: '8px', padding: '20px', zIndex: 1, marginTop: '20px', display: 'flex', flexDirection: 'column' as const, gap: '15px'
     },
     testLabel: { fontSize: '12px', fontWeight: 'bold', color: '#8b4513', textTransform: 'uppercase' as const, textAlign: 'center' as const, marginBottom: '5px' },
-    deckRow: { display: 'flex', gap: '10px', alignItems: 'center' },
-    smallSelect: { flex: 1, padding: '8px', background: '#2a1a1a', color: '#f0e6d2', border: '1px solid #5d4037', borderRadius: '4px', fontSize: '13px' },
-    testBtn: { width: '100%', background: '#5d4037', color: '#f0e6d2', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' },
+    // deckRow は不要になったため削除
+    smallSelect: { flex: 1, padding: '12px', background: '#2a1a1a', color: '#f0e6d2', border: '1px solid #5d4037', borderRadius: '4px', fontSize: '14px' },
+    testBtn: { width: '100%', background: '#5d4037', color: '#f0e6d2', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' },
 
     topRightArea: {
-      position: 'absolute' as const,
-      top: '15px',
-      right: '15px',
-      zIndex: 10,
-      display: 'flex',
-      flexDirection: 'column' as const,
-      alignItems: 'flex-end'
+      position: 'absolute' as const, top: '15px', right: '15px', zIndex: 10,
+      display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end'
     },
     dlBtn: {
-      background: 'rgba(0, 0, 0, 0.4)',
-      border: '1px solid #555',
-      color: '#888',
-      fontSize: '11px',
-      padding: '6px 12px',
-      borderRadius: '20px',
-      cursor: 'pointer',
-      fontFamily: 'inherit',
-      transition: 'all 0.2s',
-      backdropFilter: 'blur(4px)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '5px'
+      background: 'rgba(0, 0, 0, 0.4)', border: '1px solid #555', color: '#888',
+      fontSize: '11px', padding: '6px 12px', borderRadius: '20px',
+      cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
+      backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', gap: '5px'
+    },
+    // ▼ 追加: CPU設定画面用のスタイル
+    cpuOverlay: {
+      position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000,
+      display: 'flex', justifyContent: 'center', alignItems: 'center',
+      backdropFilter: 'blur(5px)'
+    },
+    cpuPanel: {
+      background: '#2c3e50', padding: '30px', borderRadius: '12px',
+      border: '2px solid #7f8c8d', width: '90%', maxWidth: '500px',
+      display: 'flex', flexDirection: 'column' as const, gap: '20px',
+      boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+    },
+    cpuTitle: {
+      color: '#f1c40f', fontSize: '24px', fontWeight: 'bold', textAlign: 'center' as const,
+      borderBottom: '1px solid #7f8c8d', paddingBottom: '10px', marginBottom: '10px'
     }
   }), [isMobile]);
 
@@ -212,19 +215,41 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
 
       <div style={styles.testSection}>
         <div style={styles.testLabel}>Experimental / Test Features</div>
-        <div style={styles.deckRow}>
-          <select value={p1Deck} onChange={(e) => setP1Deck(e.target.value)} style={styles.smallSelect}>
-            {deckOptions.map(opt => <option key={`p1-${opt.id}`} value={opt.id}>P1: {opt.name}</option>)}
-          </select>
-          <div style={{ color: '#5d4037', fontWeight: 'bold' }}>VS</div>
-          <select value={p2Deck} onChange={(e) => setP2Deck(e.target.value)} style={styles.smallSelect}>
-            {deckOptions.map(opt => <option key={`p2-${opt.id}`} value={opt.id}>P2: {opt.name}</option>)}
-          </select>
-        </div>
-        <button onClick={() => onStart(p1Deck, p2Deck, 'normal')} style={styles.testBtn} className="hover-scale">
-          VS CPU (Rule Enforced)
+        {/* ▼ 修正: デッキ選択を削除し、遷移ボタンのみにする */}
+        <button onClick={() => setShowCpuSetup(true)} style={styles.testBtn} className="hover-scale">
+          VS CPU Mode (Rule Enforced)
         </button>
       </div>
+
+      {/* ▼ 追加: CPU対戦設定モーダル */}
+      {showCpuSetup && (
+        <div style={styles.cpuOverlay}>
+          <div style={styles.cpuPanel}>
+            <div style={styles.cpuTitle}>VS CPU SETUP</div>
+            
+            <div>
+              <label style={{display:'block', color:'#bdc3c7', fontSize:'12px', marginBottom:'5px'}}>Player 1 (あなた)</label>
+              <select value={p1Deck} onChange={(e) => setP1Deck(e.target.value)} style={styles.smallSelect}>
+                {deckOptions.map(opt => <option key={`p1-${opt.id}`} value={opt.id}>{opt.name}</option>)}
+              </select>
+            </div>
+
+            <div style={{textAlign:'center', color:'#95a5a6', fontStyle:'italic'}}>VS</div>
+
+            <div>
+              <label style={{display:'block', color:'#bdc3c7', fontSize:'12px', marginBottom:'5px'}}>Player 2 (CPU)</label>
+              <select value={p2Deck} onChange={(e) => setP2Deck(e.target.value)} style={styles.smallSelect}>
+                {deckOptions.map(opt => <option key={`p2-${opt.id}`} value={opt.id}>{opt.name}</option>)}
+              </select>
+            </div>
+
+            <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
+              <button onClick={() => setShowCpuSetup(false)} style={{...styles.subBtn, flex:1, borderColor:'#95a5a6', color:'#95a5a6'}}>キャンセル</button>
+              <button onClick={() => onStart(p1Deck, p2Deck, 'normal')} style={{...styles.testBtn, flex:1, background:'#e67e22', border:'none'}}>GAME START</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showRoomCreateModal && (
         <div className="ui-overlay" style={{ zIndex: 2000 }}>
