@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { API_CONFIG } from '../api/api.config';
 import './GameUI.css'; 
+// ▼ 追加: 画像一括取得関数をインポート
+import { prefetchAllCardImages } from '../utils/imageAssets';
 
 interface DeckOption {
   id: string;
@@ -25,6 +27,9 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
   const [p2Deck, setP2Deck] = useState('nami.json');
   const [roomName, setRoomName] = useState('');
   const [showRoomCreateModal, setShowRoomCreateModal] = useState(false);
+  
+  // ▼ 追加: ダウンロード進捗管理
+  const [downloadProgress, setDownloadProgress] = useState<{current: number, total: number} | null>(null);
   
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -65,6 +70,33 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     fetchDecks();
   }, []);
 
+  // ▼ 追加: 画像一括キャッシュ機能
+  const handleCacheImages = async () => {
+    if (!confirm("全てのカード画像をダウンロードしますか？\n(初回のみ通信量が発生します。Wi-Fi推奨)")) return;
+    
+    try {
+      setDownloadProgress({ current: 0, total: 0 }); // 開始表示
+      
+      const res = await fetch(`${API_CONFIG.BASE_URL}/api/cards`);
+      const data = await res.json();
+      
+      if (data.success && Array.isArray(data.cards)) {
+        setDownloadProgress({ current: 0, total: data.cards.length });
+        
+        await prefetchAllCardImages(data.cards, (current, total) => {
+          setDownloadProgress({ current, total });
+        });
+        
+        alert("画像のダウンロードが完了しました。\nオフラインでも快適に動作します。");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("カードリストの取得に失敗しました");
+    } finally {
+      setDownloadProgress(null);
+    }
+  };
+
   const styles = useMemo(() => ({
     container: {
       minHeight: '100vh', width: '100%', background: 'radial-gradient(circle at center, #3e2723 0%, #1a0b0b 100%)', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', color: '#f0e6d2', fontFamily: '"Times New Roman", "YuMincho", "Hiragino Mincho ProN", serif', position: 'relative' as const, overflowX: 'hidden' as const, padding: '20px', boxSizing: 'border-box' as const
@@ -94,12 +126,63 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     testLabel: { fontSize: '12px', fontWeight: 'bold', color: '#8b4513', textTransform: 'uppercase' as const, textAlign: 'center' as const, marginBottom: '5px' },
     deckRow: { display: 'flex', gap: '10px', alignItems: 'center' },
     smallSelect: { flex: 1, padding: '8px', background: '#2a1a1a', color: '#f0e6d2', border: '1px solid #5d4037', borderRadius: '4px', fontSize: '13px' },
-    testBtn: { width: '100%', background: '#5d4037', color: '#f0e6d2', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }
+    testBtn: { width: '100%', background: '#5d4037', color: '#f0e6d2', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' },
+
+    // ▼ 追加: 右上のダウンロードボタンエリア
+    topRightArea: {
+      position: 'absolute' as const,
+      top: '15px',
+      right: '15px',
+      zIndex: 10,
+      display: 'flex',
+      flexDirection: 'column' as const,
+      alignItems: 'flex-end'
+    },
+    // ▼ 追加: 目立たないボタンのスタイル
+    dlBtn: {
+      background: 'rgba(0, 0, 0, 0.4)',
+      border: '1px solid #555',
+      color: '#888',
+      fontSize: '11px',
+      padding: '6px 12px',
+      borderRadius: '20px',
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+      transition: 'all 0.2s',
+      backdropFilter: 'blur(4px)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '5px'
+    }
   }), [isMobile]);
 
   return (
     <div style={styles.container}>
       <div style={styles.bgOverlay}></div>
+      
+      {/* ▼ 追加: 右上のDLボタン */}
+      <div style={styles.topRightArea}>
+        <button 
+          onClick={handleCacheImages} 
+          disabled={!!downloadProgress}
+          style={styles.dlBtn}
+          onMouseOver={(e) => e.currentTarget.style.color = '#ccc'}
+          onMouseOut={(e) => e.currentTarget.style.color = '#888'}
+          title="全てのカード画像をダウンロードしてキャッシュします"
+        >
+          {downloadProgress ? (
+            <>
+              <span style={{ width: '10px', height: '10px', border: '2px solid #888', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }}></span>
+              {`DL中: ${Math.floor((downloadProgress.current / downloadProgress.total) * 100)}%`}
+            </>
+          ) : (
+            <>
+              <span>📥</span> 画像一括DL
+            </>
+          )}
+        </button>
+      </div>
+
       <div style={styles.title}>OPCG SIM</div>
 
       <div style={styles.mainGrid}>
@@ -168,6 +251,14 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
           </div>
         </div>
       )}
+      
+      {/* 簡易的なスピナー用スタイル定義 */}
+      <style>{`
+        @keyframes spin { 
+          0% { transform: rotate(0deg); } 
+          100% { transform: rotate(360deg); } 
+        }
+      `}</style>
     </div>
   );
 };
