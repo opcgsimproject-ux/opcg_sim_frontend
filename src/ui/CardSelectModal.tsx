@@ -1,61 +1,148 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { LAYOUT_CONSTANTS, LAYOUT_PARAMS } from '../layout/layout.config';
+import type { CardInstance } from '../game/types';
+// ▼ 変更: imageAssetsから関数をインポート
 import { getCardImageUrl } from '../utils/imageAssets';
 
-export interface DeckOption {
-  id: string;
-  name: string;
-  leaderId?: string;
+interface CardSelectModalProps {
+  candidates: CardInstance[];
+  message: string;
+  minSelect: number;
+  maxSelect: number;
+  onConfirm: (selectedUuids: string[]) => void;
+  onCancel?: () => void;
 }
 
-interface DeckSelectModalProps {
-  title: string;
-  options: DeckOption[];
-  onSelect: (deckId: string) => void;
-  onClose: () => void;
-}
+export const CardSelectModal: React.FC<CardSelectModalProps> = ({ 
+  candidates, message, minSelect, maxSelect, onConfirm, onCancel 
+}) => {
+  const [selected, setSelected] = useState<string[]>([]);
+  const { COLORS } = LAYOUT_CONSTANTS;
+  const { SHAPE, SHADOWS } = LAYOUT_PARAMS;
 
-export const DeckSelectModal: React.FC<DeckSelectModalProps> = ({ title, options, onSelect, onClose }) => {
+  const handleToggle = (uuid: string) => {
+    setSelected(prev => {
+      if (prev.includes(uuid)) {
+        return prev.filter(id => id !== uuid);
+      }
+      if (maxSelect === 1) {
+        return [uuid];
+      }
+      if (prev.length >= maxSelect) {
+        return prev;
+      }
+      return [...prev, uuid];
+    });
+  };
+
+  const isValid = selected.length >= minSelect && selected.length <= maxSelect;
+
+  const overlayStyle: React.CSSProperties = {
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: COLORS.OVERLAY_MODAL_BG,
+    zIndex: 3000,
+    display: 'flex', justifyContent: 'center', alignItems: 'center'
+  };
+
+  const modalStyle: React.CSSProperties = {
+    backgroundColor: 'white',
+    padding: '24px',
+    borderRadius: '8px',
+    maxWidth: '800px',
+    width: '90%',
+    maxHeight: '80vh',
+    display: 'flex', flexDirection: 'column',
+    boxShadow: SHADOWS.MODAL
+  };
+
+  const gridStyle: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', 
+    gap: '10px',
+    overflowY: 'auto',
+    flex: 1,
+    padding: '10px'
+  };
+
   return (
-    <div style={{ 
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', zIndex: 3000,
-      display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px'
-    }}>
-      <div style={{ width: '100%', maxWidth: '800px', maxHeight: '80vh', background: '#222', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '15px', borderBottom: '1px solid #444', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0, color: '#f0e6d2' }}>{title}</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer' }}>×</button>
+    <div style={overlayStyle}>
+      <div style={modalStyle}>
+        <div style={{ marginBottom: '16px', textAlign: 'center' }}>
+          <h3 style={{ margin: '0 0 8px 0' }}>{message}</h3>
+          <div style={{ fontSize: '0.9rem', color: '#666' }}>
+            選択中: {selected.length} / {maxSelect}枚 (最小 {minSelect}枚)
+          </div>
         </div>
-        {/* ▼ 修正: グリッドレイアウトを廃止し、フレックスのリスト表示に戻しました */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {options.map(opt => (
-            <div 
-              key={opt.id} 
-              onClick={() => onSelect(opt.id)}
-              style={{ 
-                display: 'flex', alignItems: 'center',
-                background: '#333', borderRadius: '8px', cursor: 'pointer', border: '1px solid #555',
-                padding: '10px', minHeight: '80px', transition: 'background 0.2s'
-              }}
-              className="hover-scale"
-              onMouseOver={(e) => e.currentTarget.style.background = '#444'}
-              onMouseOut={(e) => e.currentTarget.style.background = '#333'}
-            >
-              {/* 左側: リーダー画像 */}
-              <div style={{ width: '50px', height: '70px', flexShrink: 0, marginRight: '15px', background: '#000', borderRadius: '4px', overflow: 'hidden', border: '1px solid #666' }}>
-                {opt.leaderId ? (
-                  <img src={getCardImageUrl(opt.leaderId)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="leader" />
-                ) : (
-                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: '10px' }}>No Img</div>
+
+        <div style={gridStyle}>
+          {candidates.map(card => {
+            const isSelected = selected.includes(card.uuid);
+            // ▼ 変更: getCardImageUrlを使用
+            const imageUrl = getCardImageUrl(card.card_id);
+
+            return (
+              <div 
+                key={card.uuid} 
+                onClick={() => handleToggle(card.uuid)}
+                style={{
+                  border: isSelected ? `3px solid ${COLORS.BTN_PRIMARY}` : '1px solid #ccc',
+                  borderRadius: SHAPE.CORNER_RADIUS_CARD,
+                  cursor: 'pointer',
+                  backgroundColor: '#444',
+                  position: 'relative',
+                  aspectRatio: '0.714',
+                  overflow: 'hidden',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}
+              >
+                <img 
+                  src={imageUrl} 
+                  alt={card.name}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    e.currentTarget.parentElement!.innerHTML = `<span style="color:white;font-size:0.7rem;padding:2px;text-align:center;">${card.name}</span>`;
+                  }}
+                />
+                
+                {isSelected && (
+                  <div style={{
+                    position: 'absolute', top: '4px', right: '4px',
+                    backgroundColor: COLORS.BTN_PRIMARY, color: 'white',
+                    borderRadius: '50%', width: '24px', height: '24px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '14px', zIndex: 10, border: '2px solid white'
+                  }}>✓</div>
                 )}
               </div>
-              {/* 右側: デッキ名 */}
-              <div style={{ flex: 1, color: '#fff', fontWeight: 'bold', fontSize: '16px' }}>
-                {opt.name}
-              </div>
-              {/* 矢印アイコン */}
-              <div style={{ color: '#666', fontSize: '20px', marginLeft: '10px' }}>›</div>
-            </div>
-          ))}
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
+          {onCancel && (
+            <button 
+              onClick={onCancel}
+              style={{
+                padding: '10px 20px', borderRadius: '4px', border: 'none',
+                backgroundColor: COLORS.BTN_SECONDARY, color: 'white', cursor: 'pointer'
+              }}
+            >
+              キャンセル
+            </button>
+          )}
+          <button 
+            onClick={() => isValid && onConfirm(selected)}
+            disabled={!isValid}
+            style={{
+              padding: '10px 20px', borderRadius: '4px', border: 'none',
+              backgroundColor: isValid ? COLORS.BTN_PRIMARY : COLORS.BTN_DISABLED,
+              color: 'white', cursor: isValid ? 'pointer' : 'not-allowed',
+              fontWeight: 'bold'
+            }}
+          >
+            決定する
+          </button>
         </div>
       </div>
     </div>
