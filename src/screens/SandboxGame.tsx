@@ -48,11 +48,7 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
-interface DeckOption {
-  id: string;
-  name: string;
-  leaderId?: string;
-}
+// ▼ 修正: ここにあった interface DeckOption { ... } を削除 (インポートしたものを使うため)
 
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
 
