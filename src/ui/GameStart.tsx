@@ -25,10 +25,10 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
   const [p1Deck, setP1Deck] = useState('imu.json');
   const [p2Deck, setP2Deck] = useState('nami.json');
   
-  const [activeModal, setActiveModal] = useState<'none' | 'solo' | 'cpu'>('none');
+  // ▼ 変更: 'solo' を削除 (モーダル不要のため)
+  const [activeModal, setActiveModal] = useState<'none' | 'cpu'>('none');
   const [downloadProgress, setDownloadProgress] = useState<{current: number, total: number} | null>(null);
   
-  // 画面サイズとスケール管理
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [contentScale, setContentScale] = useState(1);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -41,24 +41,21 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // ▼ 自動スケール調整ロジック
   useLayoutEffect(() => {
     if (contentRef.current) {
-      const HEADER_HEIGHT = 60; // ヘッダー領域の高さ
-      const BOTTOM_PADDING = 20; // 下部の余白
+      const HEADER_HEIGHT = 60; 
+      const BOTTOM_PADDING = 20; 
       const availableHeight = windowSize.height - HEADER_HEIGHT - BOTTOM_PADDING;
-      const contentHeight = contentRef.current.scrollHeight; // コンテンツの実寸高さ
+      const contentHeight = contentRef.current.scrollHeight; 
 
       if (contentHeight > availableHeight) {
-        // 収まりきらない場合は縮小する
         const newScale = availableHeight / contentHeight;
         setContentScale(newScale);
       } else {
-        // 収まる場合は等倍
         setContentScale(1);
       }
     }
-  }, [windowSize, isMobile]); // 画面サイズが変わるたびに再計算
+  }, [windowSize, isMobile]);
 
   useEffect(() => {
     const fetchDecks = async () => {
@@ -120,7 +117,7 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       alignItems: 'center', 
       color: '#f0e6d2', fontFamily: '"Times New Roman", serif', 
       position: 'relative' as const, 
-      overflow: 'hidden' as const, // スクロール禁止
+      overflow: 'hidden' as const,
       boxSizing: 'border-box' as const
     },
     bgOverlay: {
@@ -135,31 +132,29 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       padding: '10px 20px',
       zIndex: 10,
       flexShrink: 0,
-      height: '60px', // 高さ固定
+      height: '60px',
       boxSizing: 'border-box' as const
     },
-    // スケール調整用のラッパー
     scaleWrapper: {
       flex: 1,
       width: '100%',
       display: 'flex',
       justifyContent: 'center',
-      alignItems: 'flex-start', // 上寄せ
+      alignItems: 'flex-start',
       overflow: 'hidden',
       zIndex: 1
     },
-    // 実際に縮小されるコンテンツ
     scaledContent: {
       width: '100%',
       maxWidth: '900px',
       padding: '0 20px',
       boxSizing: 'border-box' as const,
       transform: `scale(${contentScale})`,
-      transformOrigin: 'top center', // 上中心を基準に縮小
-      transition: 'transform 0.1s ease-out', // 滑らかに変化
+      transformOrigin: 'top center',
+      transition: 'transform 0.1s ease-out',
       display: 'flex', 
       flexDirection: 'column' as const, 
-      gap: '30px' // セクション間の隙間
+      gap: '30px'
     },
     title: {
       fontSize: isMobile ? '40px' : '60px', fontWeight: '900', textAlign: 'center' as const, 
@@ -316,10 +311,11 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Simulation</div>
             <div style={styles.grid}>
+              {/* ▼ 変更: モーダルを開かずに直接開始 */}
               <MenuCard 
                 label="1人回しモード" 
                 desc="Solo Sandbox Mode" 
-                onClick={() => setActiveModal('solo')} 
+                onClick={() => onStart(p1Deck, p2Deck, 'sandbox', { role: 'both' })} 
                 color="#2ecc71" 
               />
               <MenuCard 
@@ -340,12 +336,7 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       </div>
 
       {/* Modals */}
-      {activeModal === 'solo' && (
-        <SetupModal 
-          title="Solo Sandbox Setup" 
-          onConfirm={() => onStart(p1Deck, p2Deck, 'sandbox', { role: 'both' })} 
-        />
-      )}
+      {/* Solo用のモーダルは削除済み */}
       
       {activeModal === 'cpu' && (
         <SetupModal 
