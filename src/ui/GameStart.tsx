@@ -24,11 +24,9 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
   const [deckOptions, setDeckOptions] = useState<DeckOption[]>([]);
   const [p1Deck, setP1Deck] = useState('imu.json');
   const [p2Deck, setP2Deck] = useState('nami.json');
-  const [roomName, setRoomName] = useState('');
-  const [showRoomCreateModal, setShowRoomCreateModal] = useState(false);
-  // ▼ 追加: CPU設定画面の表示フラグ
-  const [showCpuSetup, setShowCpuSetup] = useState(false);
   
+  // モーダル制御用ステート
+  const [activeModal, setActiveModal] = useState<'none' | 'solo' | 'cpu'>('none');
   const [downloadProgress, setDownloadProgress] = useState<{current: number, total: number} | null>(null);
   
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -39,6 +37,7 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // デッキ一覧取得
   useEffect(() => {
     const fetchDecks = async () => {
       try {
@@ -57,7 +56,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
             name: d.name
           }));
         }
-        
         setDeckOptions([...defaults, ...loadedDecks]);
       } catch (e) {
         console.error("Failed to load decks", e);
@@ -70,22 +68,19 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     fetchDecks();
   }, []);
 
+  // 画像DL機能
   const handleCacheImages = async () => {
     if (!confirm("全てのカード画像をダウンロードしますか？\n(初回のみ通信量が発生します。Wi-Fi推奨)")) return;
-    
     try {
       setDownloadProgress({ current: 0, total: 0 });
-      
       const res = await fetch(`${API_CONFIG.BASE_URL}/api/cards`);
       const data = await res.json();
       
       if (data.success && Array.isArray(data.cards)) {
         setDownloadProgress({ current: 0, total: data.cards.length });
-        
         await prefetchAllCardImages(data.cards, (current, total) => {
           setDownloadProgress({ current, total });
         });
-        
         alert("画像のダウンロードが完了しました。\nオフラインでも快適に動作します。");
       }
     } catch (e) {
@@ -98,47 +93,45 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
 
   const styles = useMemo(() => ({
     container: {
-      minHeight: '100vh', width: '100%', background: 'radial-gradient(circle at center, #3e2723 0%, #1a0b0b 100%)', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', color: '#f0e6d2', fontFamily: '"Times New Roman", "YuMincho", "Hiragino Mincho ProN", serif', position: 'relative' as const, overflowX: 'hidden' as const, padding: '20px', boxSizing: 'border-box' as const
+      minHeight: '100vh', width: '100%', 
+      background: 'radial-gradient(circle at center, #2c3e50 0%, #000000 100%)', 
+      display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', 
+      color: '#f0e6d2', fontFamily: '"Times New Roman", serif', 
+      position: 'relative' as const, overflowX: 'hidden' as const, padding: '20px', boxSizing: 'border-box' as const
     },
     bgOverlay: {
-      position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 2px, transparent 2px, transparent 20px)', pointerEvents: 'none' as const, zIndex: 0
+      position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, 
+      backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 2px, transparent 2px, transparent 20px)', 
+      pointerEvents: 'none' as const, zIndex: 0
+    },
+    contentWrapper: {
+      zIndex: 1, width: '100%', maxWidth: '900px', display: 'flex', flexDirection: 'column' as const, gap: '40px'
     },
     title: {
-      fontSize: isMobile ? '40px' : '60px', 
-      fontWeight: '900', 
-      marginBottom: '30px', 
-      marginTop: '80px',
+      fontSize: isMobile ? '40px' : '60px', fontWeight: '900', textAlign: 'center' as const, margin: '0 0 20px 0',
       background: 'linear-gradient(to bottom, #ffd700, #b8860b, #8b4513)', 
-      WebkitBackgroundClip: 'text', 
-      WebkitTextFillColor: 'transparent', 
-      filter: 'drop-shadow(0 4px 0px rgba(0,0,0,0.8))', 
-      letterSpacing: '4px', 
-      zIndex: 1, 
-      textTransform: 'uppercase' as const, 
-      textAlign: 'center' as const
+      WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', 
+      filter: 'drop-shadow(0 4px 0px rgba(0,0,0,0.8))', letterSpacing: '4px', textTransform: 'uppercase' as const
     },
-    mainGrid: {
-      display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', width: '100%', maxWidth: '800px', zIndex: 1, marginBottom: '40px'
+    section: {
+      display: 'flex', flexDirection: 'column' as const, gap: '15px'
     },
-    primaryCard: {
-      background: 'linear-gradient(135deg, #f4e4bc 0%, #e1cf9e 100%)', border: '4px solid #5d4037', borderRadius: '12px', padding: '30px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: '15px', cursor: 'pointer', transition: 'transform 0.2s', boxShadow: '0 8px 25px rgba(0,0,0,0.5)'
+    sectionTitle: {
+      fontSize: '18px', color: '#8b8b8b', borderBottom: '1px solid #444', paddingBottom: '5px', marginBottom: '10px',
+      textTransform: 'uppercase' as const, letterSpacing: '2px'
     },
-    cardTitle: { fontSize: '24px', fontWeight: 'bold', color: '#3e2723', textAlign: 'center' as const },
-    cardDesc: { fontSize: '14px', color: '#5d4037', textAlign: 'center' as const, opacity: 0.8 },
-    secondaryActions: {
-      display: 'flex', flexWrap: 'wrap' as const, gap: '10px', justifyContent: 'center', width: '100%', maxWidth: '800px', zIndex: 1, 
-      marginBottom: '15px'
+    grid: {
+      display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px'
     },
-    subBtn: { background: 'rgba(255,255,255,0.05)', border: '1px solid #d4af37', color: '#d4af37', padding: '10px 20px', fontSize: '14px', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer', fontFamily: 'inherit' },
+    menuCard: (color: string) => ({
+      background: 'rgba(255,255,255,0.05)', border: `1px solid ${color}`, borderRadius: '8px', padding: '20px',
+      display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: '10px',
+      cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(0,0,0,0.3)', minHeight: '120px'
+    }),
+    cardLabel: { fontSize: '18px', fontWeight: 'bold', color: '#eee', textAlign: 'center' as const },
+    cardDesc: { fontSize: '12px', color: '#aaa', textAlign: 'center' as const },
     
-    testSection: {
-      width: '100%', maxWidth: '500px', background: 'rgba(0,0,0,0.4)', border: '1px dashed #5d4037', borderRadius: '8px', padding: '20px', zIndex: 1, marginTop: '20px', display: 'flex', flexDirection: 'column' as const, gap: '15px'
-    },
-    testLabel: { fontSize: '12px', fontWeight: 'bold', color: '#8b4513', textTransform: 'uppercase' as const, textAlign: 'center' as const, marginBottom: '5px' },
-    // deckRow は不要になったため削除
-    smallSelect: { flex: 1, padding: '12px', background: '#2a1a1a', color: '#f0e6d2', border: '1px solid #5d4037', borderRadius: '4px', fontSize: '14px' },
-    testBtn: { width: '100%', background: '#5d4037', color: '#f0e6d2', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' },
-
+    // Top Right Area
     topRightArea: {
       position: 'absolute' as const, top: '15px', right: '15px', zIndex: 10,
       display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end'
@@ -149,36 +142,88 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
       backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', gap: '5px'
     },
-    // ▼ 追加: CPU設定画面用のスタイル
-    cpuOverlay: {
+
+    // Modal Styles
+    modalOverlay: {
       position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000,
       display: 'flex', justifyContent: 'center', alignItems: 'center',
       backdropFilter: 'blur(5px)'
     },
-    cpuPanel: {
+    modalPanel: {
       background: '#2c3e50', padding: '30px', borderRadius: '12px',
       border: '2px solid #7f8c8d', width: '90%', maxWidth: '500px',
       display: 'flex', flexDirection: 'column' as const, gap: '20px',
       boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
     },
-    cpuTitle: {
+    modalTitle: {
       color: '#f1c40f', fontSize: '24px', fontWeight: 'bold', textAlign: 'center' as const,
       borderBottom: '1px solid #7f8c8d', paddingBottom: '10px', marginBottom: '10px'
-    }
+    },
+    select: {
+      width: '100%', padding: '12px', background: '#2a1a1a', color: '#f0e6d2',
+      border: '1px solid #5d4037', borderRadius: '4px', fontSize: '16px', marginTop: '5px'
+    },
+    actionBtn: (primary: boolean) => ({
+      flex: 1, padding: '12px', borderRadius: '4px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer',
+      border: primary ? 'none' : '1px solid #95a5a6',
+      background: primary ? '#e67e22' : 'transparent',
+      color: primary ? '#fff' : '#95a5a6'
+    })
   }), [isMobile]);
+
+  const MenuCard = ({ label, desc, onClick, color = '#7f8c8d' }: { label: string, desc: string, onClick: () => void, color?: string }) => (
+    <div 
+      style={styles.menuCard(color)}
+      onClick={onClick}
+      className="hover-scale"
+      onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+      onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+    >
+      <div style={styles.cardLabel}>{label}</div>
+      <div style={styles.cardDesc}>{desc}</div>
+    </div>
+  );
+
+  const SetupModal = ({ title, onConfirm }: { title: string, onConfirm: () => void }) => (
+    <div style={styles.modalOverlay}>
+      <div style={styles.modalPanel}>
+        <div style={styles.modalTitle}>{title}</div>
+        
+        <div>
+          <label style={{display:'block', color:'#bdc3c7', fontSize:'12px'}}>Player 1 (あなた)</label>
+          <select value={p1Deck} onChange={(e) => setP1Deck(e.target.value)} style={styles.select}>
+            {deckOptions.map(opt => <option key={`p1-${opt.id}`} value={opt.id}>{opt.name}</option>)}
+          </select>
+        </div>
+
+        <div style={{textAlign:'center', color:'#95a5a6', fontStyle:'italic'}}>VS</div>
+
+        <div>
+          <label style={{display:'block', color:'#bdc3c7', fontSize:'12px'}}>Player 2 (相手/CPU)</label>
+          <select value={p2Deck} onChange={(e) => setP2Deck(e.target.value)} style={styles.select}>
+            {deckOptions.map(opt => <option key={`p2-${opt.id}`} value={opt.id}>{opt.name}</option>)}
+          </select>
+        </div>
+
+        <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
+          <button onClick={() => setActiveModal('none')} style={styles.actionBtn(false)}>キャンセル</button>
+          <button onClick={onConfirm} style={styles.actionBtn(true)}>開始</button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={styles.container}>
       <div style={styles.bgOverlay}></div>
       
+      {/* 右上DLボタン */}
       <div style={styles.topRightArea}>
         <button 
           onClick={handleCacheImages} 
           disabled={!!downloadProgress}
           style={styles.dlBtn}
-          onMouseOver={(e) => e.currentTarget.style.color = '#ccc'}
-          onMouseOut={(e) => e.currentTarget.style.color = '#888'}
           title="全てのカード画像をダウンロードしてキャッシュします"
         >
           {downloadProgress ? (
@@ -187,104 +232,74 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
               {`DL中: ${Math.floor((downloadProgress.current / downloadProgress.total) * 100)}%`}
             </>
           ) : (
-            <>
-              <span>📥</span> 画像一括DL
-            </>
+            <><span>📥</span> 画像一括DL</>
           )}
         </button>
       </div>
 
-      <div style={styles.title}>OPCG SIM</div>
+      <div style={styles.contentWrapper}>
+        <div style={styles.title}>OPCG SIM</div>
 
-      <div style={styles.mainGrid}>
-        <div style={styles.primaryCard} className="hover-scale" onClick={() => onStart(p1Deck, p2Deck, 'sandbox', { role: 'both' })}>
-          <div style={styles.cardTitle}>1人回し</div>
-          <div style={styles.cardDesc}>Sandbox Mode / Solo Play</div>
-        </div>
-        <div style={styles.primaryCard} className="hover-scale" onClick={onDeckBuilder}>
-          <div style={styles.cardTitle}>デッキ作成</div>
-          <div style={styles.cardDesc}>Deck Builder</div>
-        </div>
-      </div>
-
-      <div style={styles.secondaryActions}>
-        <button onClick={() => setShowRoomCreateModal(true)} style={{ ...styles.subBtn, borderColor: '#3498db', color: '#3498db' }} className="hover-scale">ルーム作成</button>
-        <button onClick={onLobby} style={{ ...styles.subBtn, borderColor: '#3498db', color: '#3498db' }} className="hover-scale">部屋に参加</button>
-        <button onClick={onCardList} style={{ ...styles.subBtn, borderColor: '#e67e22', color: '#e67e22' }} className="hover-scale">カードリスト</button>
-      </div>
-
-      <div style={styles.testSection}>
-        <div style={styles.testLabel}>Experimental / Test Features</div>
-        {/* ▼ 修正: デッキ選択を削除し、遷移ボタンのみにする */}
-        <button onClick={() => setShowCpuSetup(true)} style={styles.testBtn} className="hover-scale">
-          VS CPU Mode (Rule Enforced)
-        </button>
-      </div>
-
-      {/* ▼ 追加: CPU対戦設定モーダル */}
-      {showCpuSetup && (
-        <div style={styles.cpuOverlay}>
-          <div style={styles.cpuPanel}>
-            <div style={styles.cpuTitle}>VS CPU SETUP</div>
-            
-            <div>
-              <label style={{display:'block', color:'#bdc3c7', fontSize:'12px', marginBottom:'5px'}}>Player 1 (あなた)</label>
-              <select value={p1Deck} onChange={(e) => setP1Deck(e.target.value)} style={styles.smallSelect}>
-                {deckOptions.map(opt => <option key={`p1-${opt.id}`} value={opt.id}>{opt.name}</option>)}
-              </select>
-            </div>
-
-            <div style={{textAlign:'center', color:'#95a5a6', fontStyle:'italic'}}>VS</div>
-
-            <div>
-              <label style={{display:'block', color:'#bdc3c7', fontSize:'12px', marginBottom:'5px'}}>Player 2 (CPU)</label>
-              <select value={p2Deck} onChange={(e) => setP2Deck(e.target.value)} style={styles.smallSelect}>
-                {deckOptions.map(opt => <option key={`p2-${opt.id}`} value={opt.id}>{opt.name}</option>)}
-              </select>
-            </div>
-
-            <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
-              <button onClick={() => setShowCpuSetup(false)} style={{...styles.subBtn, flex:1, borderColor:'#95a5a6', color:'#95a5a6'}}>キャンセル</button>
-              <button onClick={() => onStart(p1Deck, p2Deck, 'normal')} style={{...styles.testBtn, flex:1, background:'#e67e22', border:'none'}}>GAME START</button>
-            </div>
+        {/* Section 1: デッキ管理 */}
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>Deck & Cards</div>
+          <div style={styles.grid}>
+            <MenuCard 
+              label="デッキ作成 / 一覧" 
+              desc="Deck Builder" 
+              onClick={onDeckBuilder} 
+              color="#3498db" 
+            />
+            <MenuCard 
+              label="カードリスト" 
+              desc="Card Catalog" 
+              onClick={onCardList} 
+              color="#e67e22" 
+            />
           </div>
         </div>
-      )}
 
-      {showRoomCreateModal && (
-        <div className="ui-overlay" style={{ zIndex: 2000 }}>
-          <div className="action-menu" style={{ maxWidth: '400px' }}>
-            <h3 className="menu-title">新規ルーム作成</h3>
-            <div style={{ padding: '10px 0' }}>
-              <label style={{ fontSize: '12px', color: '#666', display: 'block', textAlign: 'left', marginBottom: '5px' }}>部屋名</label>
-              <input 
-                type="text" 
-                value={roomName} 
-                onChange={(e) => setRoomName(e.target.value)}
-                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px', boxSizing: 'border-box' }}
-                autoFocus
-                placeholder="部屋名を入力"
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter' && roomName.trim()) {
-                        onStart(p1Deck, p2Deck, 'sandbox', { role: 'p1', room_name: roomName });
-                    }
-                }}
-              />
-            </div>
-            <div className="menu-buttons" style={{ marginTop: '20px' }}>
-              <button 
-                className="menu-btn primary" 
-                disabled={!roomName.trim()}
-                onClick={() => onStart(p1Deck, p2Deck, 'sandbox', { role: 'p1', room_name: roomName })}
-              >
-                作成して開始
-              </button>
-              <button className="menu-btn cancel" onClick={() => setShowRoomCreateModal(false)}>キャンセル</button>
-            </div>
+        {/* Section 2: シミュレーション */}
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>Simulation</div>
+          <div style={styles.grid}>
+            <MenuCard 
+              label="1人回しモード" 
+              desc="Solo Sandbox Mode" 
+              onClick={() => setActiveModal('solo')} 
+              color="#2ecc71" 
+            />
+            <MenuCard 
+              label="対戦モード" 
+              desc="Online Multiplayer" 
+              onClick={onLobby} 
+              color="#9b59b6" 
+            />
+            <MenuCard 
+              label="自動モード" 
+              desc="VS CPU (Rule Enforced)" 
+              onClick={() => setActiveModal('cpu')} 
+              color="#e74c3c" 
+            />
           </div>
         </div>
+      </div>
+
+      {/* Modals */}
+      {activeModal === 'solo' && (
+        <SetupModal 
+          title="Solo Sandbox Setup" 
+          onConfirm={() => onStart(p1Deck, p2Deck, 'sandbox', { role: 'both' })} 
+        />
       )}
       
+      {activeModal === 'cpu' && (
+        <SetupModal 
+          title="VS CPU Setup" 
+          onConfirm={() => onStart(p1Deck, p2Deck, 'normal')} 
+        />
+      )}
+
       <style>{`
         @keyframes spin { 
           0% { transform: rotate(0deg); } 
