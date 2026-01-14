@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as PIXI from 'pixi.js';
 import { LAYOUT_CONSTANTS, LAYOUT_PARAMS } from '../layout/layout.config';
 import { calculateCoordinates } from '../layout/layoutEngine';
@@ -7,9 +7,9 @@ import { useGameAction } from '../game/actions';
 import { CardDetailSheet } from '../ui/CardDetailSheet';
 import { CardSelectModal } from '../ui/CardSelectModal';
 import { DebugReporter } from '../ui/DebugReporter';
-import { DeckSelectModal, type DeckOption } from '../ui/DeckSelectModal'; // ▼ 追加
-import { API_CONFIG } from '../api/api.config'; // ▼ 追加
-import { getCardImageUrl } from '../utils/imageAssets'; // ▼ 追加
+import { DeckSelectModal, type DeckOption } from '../ui/DeckSelectModal';
+import { API_CONFIG } from '../api/api.config';
+import { getCardImageUrl } from '../utils/imageAssets';
 import CONST from '../../shared_constants.json';
 import { logger } from '../utils/logger';
 import type { GameState, CardInstance, PendingRequest } from '../game/types';
@@ -30,10 +30,9 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
   
   const [layoutCoords, setLayoutCoords] = useState<{ x: number, y: number } | null>(null);
   
-  // ▼ 追加: セットアップ用ステート
   const [p1DeckId, setP1DeckId] = useState(initialP1 || 'imu.json');
   const [p2DeckId, setP2DeckId] = useState(initialP2 || 'nami.json');
-  const [isSetupComplete, setIsSetupComplete] = useState(!!(initialP1 && initialP2)); // 初期値があればセットアップ済みとみなす
+  const [isSetupComplete, setIsSetupComplete] = useState(!!(initialP1 && initialP2));
   const [deckOptions, setDeckOptions] = useState<DeckOption[]>([]);
   const [selectingDeckFor, setSelectingDeckFor] = useState<'p1' | 'p2' | null>(null);
 
@@ -49,9 +48,8 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
     pendingRequest
   );
 
-  // ▼ 追加: デッキ一覧の取得 (SandboxGameと同じロジック)
   useEffect(() => {
-    if (isSetupComplete) return; // ゲーム開始済なら不要
+    if (isSetupComplete) return;
 
     const fetchDecks = async () => {
       const options: DeckOption[] = [];
@@ -78,7 +76,6 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
         }
       } catch(e) { console.error(e); }
 
-      // デフォルトデッキも選択肢に追加
       options.unshift(
         { id: 'imu.json', name: 'Imu (Default)', leaderId: 'ST01-001' },
         { id: 'nami.json', name: 'Nami (Default)', leaderId: 'OP03-040' }
@@ -91,17 +88,17 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
     fetchDecks();
   }, [isSetupComplete]);
 
-  // ▼ 追加: セットアップ完了ハンドラ
   const handleGameStart = () => {
     if (p1DeckId && p2DeckId) {
       setIsSetupComplete(true);
     }
   };
 
-  // 既存のActionハンドラ群...
   const handleSelectionResolve = async (selectedUuids: string[]) => {
     if (!gameState?.game_id || !pendingRequest) return;
+    
     const battleActionTypes = Object.values(CONST.c_to_s_interface.BATTLE_ACTIONS.TYPES);
+    
     if (battleActionTypes.includes(pendingRequest.action)) {
       await sendBattleAction(pendingRequest.action as any, selectedUuids[0], pendingRequest.request_id);
     } else {
@@ -113,6 +110,7 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
 
   const handleOptionSelect = async (index: number) => {
     if (!gameState?.game_id || isPending) return;
+    
     await sendAction(CONST.c_to_s_interface.GAME_ACTIONS.TYPES.RESOLVE_EFFECT_SELECTION, {
       extra: { index: index }
     });
@@ -240,7 +238,6 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
     setIsDetailMode(true); 
   };
   
-  // ▼ 変更: isSetupComplete が true になってからゲームを開始する
   useEffect(() => {
     if (!pixiContainerRef.current || !isSetupComplete) return;
 
@@ -259,7 +256,6 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
     const coords = calculateCoordinates(window.innerWidth, window.innerHeight);
     setLayoutCoords(coords.turnEndPos);
 
-    // 選択されたデッキで開始
     startGame(p1DeckId, p2DeckId);
 
     const handleResize = () => {
@@ -273,7 +269,7 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
       window.removeEventListener('resize', handleResize);
       app.destroy(true, { children: true });
     };
-  }, [isSetupComplete]); // 依存配列変更
+  }, [isSetupComplete]);
 
   useEffect(() => {
     const app = appRef.current;
@@ -332,7 +328,6 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
     onBack();
   };
 
-  // --- デッキ選択画面のレンダリング (セットアップ未完了時) ---
   if (!isSetupComplete) {
     const getLeaderImage = (deckId: string) => {
       const opt = deckOptions.find(d => d.id === deckId);
@@ -354,7 +349,6 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
             VS CPU SETUP
           </h2>
 
-          {/* Player 1 Selection */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
             <label style={{ color: '#bdc3c7', fontSize: '12px', fontWeight: 'bold' }}>Player 1 (あなた)</label>
             <div 
@@ -377,7 +371,6 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
 
           <div style={{ textAlign: 'center', color: '#95a5a6', fontStyle: 'italic', margin: '-10px 0' }}>VS</div>
 
-          {/* Player 2 Selection */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
             <label style={{ color: '#bdc3c7', fontSize: '12px', fontWeight: 'bold' }}>Player 2 (CPU)</label>
             <div 
@@ -433,7 +426,6 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
     );
   }
 
-  // --- ゲーム本編のレンダリング ---
   const showSearchModal = 
     pendingRequest?.action === CONST.c_to_s_interface.PENDING_ACTION_TYPES.SEARCH_AND_SELECT ||
     pendingRequest?.action === CONST.c_to_s_interface.BATTLE_ACTIONS.TYPES.SELECT_COUNTER;
