@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { API_CONFIG } from '../api/api.config';
 import './GameUI.css'; 
-// ▼ 追加: 画像一括取得関数をインポート
 import { prefetchAllCardImages } from '../utils/imageAssets';
 
 interface DeckOption {
@@ -28,7 +27,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
   const [roomName, setRoomName] = useState('');
   const [showRoomCreateModal, setShowRoomCreateModal] = useState(false);
   
-  // ▼ 追加: ダウンロード進捗管理
   const [downloadProgress, setDownloadProgress] = useState<{current: number, total: number} | null>(null);
   
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -70,12 +68,11 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     fetchDecks();
   }, []);
 
-  // ▼ 追加: 画像一括キャッシュ機能
   const handleCacheImages = async () => {
     if (!confirm("全てのカード画像をダウンロードしますか？\n(初回のみ通信量が発生します。Wi-Fi推奨)")) return;
     
     try {
-      setDownloadProgress({ current: 0, total: 0 }); // 開始表示
+      setDownloadProgress({ current: 0, total: 0 });
       
       const res = await fetch(`${API_CONFIG.BASE_URL}/api/cards`);
       const data = await res.json();
@@ -105,7 +102,19 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 2px, transparent 2px, transparent 20px)', pointerEvents: 'none' as const, zIndex: 0
     },
     title: {
-      fontSize: isMobile ? '40px' : '60px', fontWeight: '900', marginBottom: '30px', background: 'linear-gradient(to bottom, #ffd700, #b8860b, #8b4513)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', filter: 'drop-shadow(0 4px 0px rgba(0,0,0,0.8))', letterSpacing: '4px', zIndex: 1, textTransform: 'uppercase' as const, textAlign: 'center' as const
+      fontSize: isMobile ? '40px' : '60px', 
+      fontWeight: '900', 
+      marginBottom: '30px', 
+      // ▼ 修正: 上部に余白を追加して全体を下にずらす
+      marginTop: '80px',
+      background: 'linear-gradient(to bottom, #ffd700, #b8860b, #8b4513)', 
+      WebkitBackgroundClip: 'text', 
+      WebkitTextFillColor: 'transparent', 
+      filter: 'drop-shadow(0 4px 0px rgba(0,0,0,0.8))', 
+      letterSpacing: '4px', 
+      zIndex: 1, 
+      textTransform: 'uppercase' as const, 
+      textAlign: 'center' as const
     },
     mainGrid: {
       display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', width: '100%', maxWidth: '800px', zIndex: 1, marginBottom: '40px'
@@ -116,7 +125,9 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     cardTitle: { fontSize: '24px', fontWeight: 'bold', color: '#3e2723', textAlign: 'center' as const },
     cardDesc: { fontSize: '14px', color: '#5d4037', textAlign: 'center' as const, opacity: 0.8 },
     secondaryActions: {
-      display: 'flex', flexWrap: 'wrap' as const, gap: '10px', justifyContent: 'center', width: '100%', maxWidth: '800px', zIndex: 1, marginBottom: '40px'
+      display: 'flex', flexWrap: 'wrap' as const, gap: '10px', justifyContent: 'center', width: '100%', maxWidth: '800px', zIndex: 1, 
+      // ▼ 修正: 下の余白を詰める (40px -> 15px)
+      marginBottom: '15px'
     },
     subBtn: { background: 'rgba(255,255,255,0.05)', border: '1px solid #d4af37', color: '#d4af37', padding: '10px 20px', fontSize: '14px', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer', fontFamily: 'inherit' },
     
@@ -128,7 +139,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     smallSelect: { flex: 1, padding: '8px', background: '#2a1a1a', color: '#f0e6d2', border: '1px solid #5d4037', borderRadius: '4px', fontSize: '13px' },
     testBtn: { width: '100%', background: '#5d4037', color: '#f0e6d2', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' },
 
-    // ▼ 追加: 右上のダウンロードボタンエリア
     topRightArea: {
       position: 'absolute' as const,
       top: '15px',
@@ -138,7 +148,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       flexDirection: 'column' as const,
       alignItems: 'flex-end'
     },
-    // ▼ 追加: 目立たないボタンのスタイル
     dlBtn: {
       background: 'rgba(0, 0, 0, 0.4)',
       border: '1px solid #555',
@@ -160,7 +169,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     <div style={styles.container}>
       <div style={styles.bgOverlay}></div>
       
-      {/* ▼ 追加: 右上のDLボタン */}
       <div style={styles.topRightArea}>
         <button 
           onClick={handleCacheImages} 
@@ -252,7 +260,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
         </div>
       )}
       
-      {/* 簡易的なスピナー用スタイル定義 */}
       <style>{`
         @keyframes spin { 
           0% { transform: rotate(0deg); } 

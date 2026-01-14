@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { logger } from '../utils/logger';
 import { API_CONFIG } from '../api/api.config';
-// ▼ 変更: 画像URL取得関数をインポート
 import { getCardImageUrl } from '../utils/imageAssets';
 
 interface CardData {
@@ -51,7 +50,6 @@ const getLocalDecks = (): DeckData[] => {
 
 const CardImageStub = ({ card, count, onClick }: { card: CardData | { name: string, uuid?: string }, count?: number, onClick?: () => void }) => {
   const [imgError, setImgError] = useState(false);
-  // ▼ 変更: uuidを引数にしてURL取得
   const imageUrl = getCardImageUrl(card.uuid || '');
 
   return (
@@ -91,7 +89,6 @@ const CardImageStub = ({ card, count, onClick }: { card: CardData | { name: stri
 const CardDetailScreen = ({ card, currentCount, onCountChange, onClose, onNavigate, viewOnly }: {
   card: CardData, currentCount: number, onCountChange: (diff: number) => void, onClose: () => void, onNavigate?: (direction: -1 | 1) => void, viewOnly?: boolean
 }) => {
-  // ▼ 変更: uuidを引数にしてURL取得
   const imageUrl = getCardImageUrl(card.uuid);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
@@ -162,7 +159,6 @@ const CardDetailScreen = ({ card, currentCount, onCountChange, onClose, onNaviga
   );
 };
 
-// ... (FilterModal, DeckDistributionModal は前回と同じため省略: 変更なし) ...
 const FilterModal = ({ initialFilters, onApply, traitList, setList, onClose }: { initialFilters: FilterState, onApply: (f: FilterState) => void, traitList: string[], setList: string[], onClose: () => void }) => {
   const [localFilters, setLocalFilters] = useState<FilterState>(initialFilters);
   const [traitSearch, setTraitSearch] = useState('');
@@ -405,7 +401,6 @@ const DeckListView = ({ decks, onSelectDeck, onCreateNew, onBack }: { decks: Dec
         {decks.map((deck, idx) => (
             <div key={deck.id || idx} onClick={() => onSelectDeck(deck)} style={{ display: 'flex', alignItems: 'center', background: '#333', border: '1px solid #444', borderRadius: '8px', padding: '10px', cursor: 'pointer' }}>
                 <div style={{ width: '50px', height: '70px', background: '#222', border: '1px solid #555', borderRadius: '4px', marginRight: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#aaa', overflow: 'hidden', flexShrink: 0 }}>
-                    {/* ▼ 変更: leader_id からURL取得 */}
                     {deck.leader_id ? (
                       <img src={getCardImageUrl(deck.leader_id)} alt="leader" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerText = deck.leader_id || "Err"; }} />
                     ) : "No Leader"}
@@ -486,7 +481,8 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
   const [inputText, setInputText] = useState('');
 
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [displayLimit, setDisplayLimit] = useState(50);
+  // ▼ 変更: 初期表示枚数を100に変更
+  const [displayLimit, setDisplayLimit] = useState(100);
   const [viewingCard, setViewingCard] = useState<CardData | null>(null);
 
   const traitList = useMemo(() => {
@@ -585,7 +581,10 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
     });
   }, [allCards, filters, mode, searchText, currentDeck.leader_id, viewOnly]);
 
-  useEffect(() => { setDisplayLimit(50); }, [filters, mode, searchText]);
+  useEffect(() => { 
+    // ▼ 変更: フィルタ変更時も100枚にリセット
+    setDisplayLimit(100); 
+  }, [filters, mode, searchText]);
 
   const handleSelect = (card: CardData) => {
     if (viewOnly) { setViewingCard(card); return; }
@@ -610,8 +609,9 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    if (scrollHeight - scrollTop <= clientHeight + 100) {
-      if (displayLimit < filtered.length) setDisplayLimit(prev => prev + 50);
+    // ▼ 変更: スクロールマージンを300pxに拡大し、追加読み込みを100枚単位に変更
+    if (scrollHeight - scrollTop <= clientHeight + 300) {
+      if (displayLimit < filtered.length) setDisplayLimit(prev => prev + 100);
     }
   };
 
