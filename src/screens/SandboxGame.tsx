@@ -651,7 +651,24 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                     )}
                 </div>
             )}
-            <button onClick={() => handleAction('TURN_END', {})} disabled={isPending || !isMyTurn || isActionBlockedByMulligan} style={{ position: 'absolute', left: layoutCoords ? `${layoutCoords.x + 40}px` : 'auto', top: layoutCoords ? `${layoutCoords.y}px` : '50%', padding: '10px 20px', backgroundColor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? COLORS.BTN_DISABLED : COLORS.BTN_PRIMARY, color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', pointerEvents: 'auto', cursor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? 'not-allowed' : 'pointer', opacity: (isMyTurn && !isActionBlockedByMulligan) ? 1 : 0.6 }}>{isPending ? '送信中' : '終了'}</button>
+            {/* ▼ 修正: ボタンを中心に配置し、縦幅を「TOPへ」ボタンと統一 */}
+            <button 
+              onClick={() => handleAction('TURN_END', {})} 
+              disabled={isPending || !isMyTurn || isActionBlockedByMulligan} 
+              style={{ 
+                position: 'absolute', 
+                left: layoutCoords ? `${layoutCoords.x + 40}px` : 'auto', 
+                top: layoutCoords ? `${layoutCoords.y}px` : '50%', 
+                transform: 'translateY(-50%)', // 中心配置
+                padding: '5px 20px', // 縦幅をTOPへボタン(5px)に合わせる
+                backgroundColor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? COLORS.BTN_DISABLED : COLORS.BTN_PRIMARY, 
+                color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', pointerEvents: 'auto', 
+                cursor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? 'not-allowed' : 'pointer', 
+                opacity: (isMyTurn && !isActionBlockedByMulligan) ? 1 : 0.6 
+              }}
+            >
+              {isPending ? '送信中' : '終了'}
+            </button>
         </div>
       )}
     </div>
