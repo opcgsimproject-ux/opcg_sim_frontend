@@ -40,7 +40,7 @@ export default defineConfig({
             options: {
               cacheName: 'card-images-cache',
               expiration: {
-                maxEntries: 500,
+                maxEntries: 5000,
                 maxAgeSeconds: 60 * 60 * 24 * 30
               },
               cacheableResponse: {
