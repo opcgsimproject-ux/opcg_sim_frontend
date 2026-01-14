@@ -2,7 +2,6 @@ import * as PIXI from 'pixi.js';
 import { createCardContainer } from './CardRenderer';
 import type { CardInstance } from '../game/types';
 import { LAYOUT_PARAMS } from '../layout/layout.config';
-// ▼ 変更: imageAssetsから関数をインポート
 import { getBackImageUrl } from '../utils/imageAssets';
 
 export interface InspectOverlayContainer extends PIXI.Container {
@@ -32,7 +31,9 @@ export const createInspectOverlay = (
   onMoveToHand: (uuid: string) => void,
   onMoveToTrash: (uuid: string) => void,
   onScrollCallback: (x: number) => void,
-  onShuffle?: () => void
+  onShuffle?: () => void,
+  // ▼ 追加: 指定枚数公開用のコールバック
+  onRevealTop?: (count: number) => void 
 ): InspectOverlayContainer => {
   const container = new PIXI.Container() as InspectOverlayContainer;
 
@@ -47,7 +48,8 @@ export const createInspectOverlay = (
 
   // --- レイアウト定数 ---
   const PADDING = 20;
-  const HEADER_HEIGHT = 40; 
+  // ▼ 変更: ヘッダーエリアを拡張 (ボタン行を追加するため)
+  const HEADER_HEIGHT = 130; 
   const SCROLL_ZONE_HEIGHT = 70;
   const PANEL_W = Math.min(W * 0.95, 1200);
   const PANEL_X = (W - PANEL_W) / 2;
@@ -68,46 +70,76 @@ export const createInspectOverlay = (
   panel.on('pointerdown', (e) => e.stopPropagation());
   container.addChild(panel);
 
-  // --- ヘッダー要素 ---
+  // --- 1行目: タイトル ---
   const titleStyle = new PIXI.TextStyle({ fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', fill: '#ffd700' });
   const title = new PIXI.Text(`${type.toUpperCase()} (${cards.length})`, titleStyle);
-  title.position.set(PADDING, 10);
+  title.position.set(PADDING, 15);
   panel.addChild(title);
 
   const closeBtn = new PIXI.Text("×", { ...titleStyle, fontSize: 28, fill: '#ffffff' });
   closeBtn.eventMode = 'static';
   closeBtn.cursor = 'pointer';
-  closeBtn.position.set(PANEL_W - PADDING - 15, 5);
+  closeBtn.position.set(PANEL_W - PADDING - 15, 10);
   closeBtn.on('pointerdown', onClose);
   panel.addChild(closeBtn);
 
-  // Reveal All / Shuffle ボタン
   if (type !== 'trash') {
-    let btnX = PANEL_W - 160;
+    // --- 2行目: 基本アクション (Reveal All / Shuffle) ---
+    const ROW2_Y = 50;
+    let btnX = PADDING; 
 
+    // REVEAL ALL
     const revealBtn = new PIXI.Container();
-    const rBg = new PIXI.Graphics().beginFill(0x27ae60).drawRoundedRect(0, 0, 100, 26, 4).endFill();
+    const rBg = new PIXI.Graphics().beginFill(0x27ae60).drawRoundedRect(0, 0, 100, 30, 4).endFill();
     const rTxt = new PIXI.Text("REVEAL ALL", { fontSize: 12, fill: 'white', fontWeight: 'bold' });
-    rTxt.anchor.set(0.5); rTxt.position.set(50, 13);
+    rTxt.anchor.set(0.5); rTxt.position.set(50, 15);
     revealBtn.addChild(rBg, rTxt);
-    revealBtn.position.set(btnX, 8);
+    revealBtn.position.set(btnX, ROW2_Y);
     revealBtn.eventMode = 'static';
     revealBtn.cursor = 'pointer';
     revealBtn.on('pointerdown', onRevealAll);
     panel.addChild(revealBtn);
+    btnX += 110;
 
+    // SHUFFLE (Deckのみ)
     if (type === 'deck' && onShuffle) {
-        btnX -= 110;
         const shufBtn = new PIXI.Container();
-        const sBg = new PIXI.Graphics().beginFill(0xe67e22).drawRoundedRect(0, 0, 100, 26, 4).endFill();
+        const sBg = new PIXI.Graphics().beginFill(0xe67e22).drawRoundedRect(0, 0, 100, 30, 4).endFill();
         const sTxt = new PIXI.Text("SHUFFLE", { fontSize: 12, fill: 'white', fontWeight: 'bold' });
-        sTxt.anchor.set(0.5); sTxt.position.set(50, 13);
+        sTxt.anchor.set(0.5); sTxt.position.set(50, 15);
         shufBtn.addChild(sBg, sTxt);
-        shufBtn.position.set(btnX, 8);
+        shufBtn.position.set(btnX, ROW2_Y);
         shufBtn.eventMode = 'static';
         shufBtn.cursor = 'pointer';
         shufBtn.on('pointerdown', onShuffle);
         panel.addChild(shufBtn);
+        btnX += 110;
+    }
+
+    // --- 3行目: 枚数指定オープンボタン (Deckのみ) ---
+    if (type === 'deck' && onRevealTop) {
+      const ROW3_Y = 90;
+      let startX = PADDING;
+
+      const label = new PIXI.Text("上から公開:", { fontSize: 14, fill: '#aaaaaa' });
+      label.position.set(startX, ROW3_Y + 5);
+      panel.addChild(label);
+      startX += 90;
+
+      [3, 4, 5].forEach(count => {
+        const btn = new PIXI.Container();
+        const bg = new PIXI.Graphics().beginFill(0x3498db).drawRoundedRect(0, 0, 50, 26, 4).endFill();
+        const txt = new PIXI.Text(`${count}枚`, { fontSize: 12, fill: 'white', fontWeight: 'bold' });
+        txt.anchor.set(0.5); txt.position.set(25, 13);
+        btn.addChild(bg, txt);
+        btn.position.set(startX, ROW3_Y);
+        btn.eventMode = 'static';
+        btn.cursor = 'pointer';
+        btn.on('pointerdown', () => onRevealTop(count));
+        panel.addChild(btn);
+        
+        startX += 60;
+      });
     }
   }
 
@@ -126,11 +158,9 @@ export const createInspectOverlay = (
   const cardSprites: { sprite: PIXI.Container, card: CardInstance, originalIndex: number }[] = [];
 
   cards.forEach((card, i) => {
-    // デフォルトは裏向き。クリックで公開。
     const isRevealed = type === 'trash' || type === 'hand' || revealedCardIds.has(card.uuid);
     const displayCard = { ...card, is_face_up: isRevealed };
     
-    // CardRenderer側でgetCardImageUrlが使われる
     const cardSprite = createCardContainer(displayCard, BASE_CARD_WIDTH, BASE_CARD_HEIGHT, { 
       onClick: () => {}
     });
@@ -139,7 +169,6 @@ export const createInspectOverlay = (
     cardSprite.scale.set(scale);
 
     if (!isRevealed) {
-      // ▼ 変更: 裏面画像の取得
       const backTexture = PIXI.Texture.from(getBackImageUrl('MAIN'));
       const backSprite = new PIXI.Sprite(backTexture);
       backSprite.width = BASE_CARD_WIDTH;
@@ -263,7 +292,7 @@ export const createInspectOverlay = (
       }
       const X_OFFSET = TOTAL_CARD_WIDTH / 2 + 20;
       const targetX = visualIndex * TOTAL_CARD_WIDTH + X_OFFSET - currentScrollX;
-      sprite.position.set(targetX, LIST_H / 3);
+      sprite.position.set(targetX, LIST_H / 2);
     });
   };
   container.updateScroll(initialScrollX);

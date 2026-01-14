@@ -48,8 +48,6 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
-// ▼ 修正: DeckOption の重複定義を削除しました
-
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
 
 export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomName, onBack }: SandboxGameProps) => {
@@ -143,7 +141,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       pressStartPosRef.current = null;
   };
 
-  // ▼ 修正: startDrag を useCallback で定義し、複数の useEffect から参照可能にする
   const startDrag = useCallback((card: CardInstance, startPoint: { x: number, y: number }) => {
     const app = appRef.current;
     if (!app) return;
@@ -290,8 +287,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     bg.beginFill(COLORS.PLAYER_BG).drawRect(0, midY, W, H - midY).endFill();
     app.stage.addChild(bg);
     
-    // ▼ 修正: startDrag の定義を移動したため、ここでは定義不要
-
     const onCardDown = (e: PIXI.FederatedPointerEvent, card: CardInstance) => {
         if (isPending || dragState || isActionBlockedByMulligan) return;
         
@@ -326,7 +321,13 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           (uuid) => { handleAction('MOVE_CARD', { card_uuid: uuid, dest_player_id: inspecting.pid, dest_zone: 'hand' }); },
           (uuid) => { handleAction('MOVE_CARD', { card_uuid: uuid, dest_player_id: inspecting.pid, dest_zone: 'trash' }); },
           (x) => { inspectScrollXRef.current = x; },
-          () => handleAction('SHUFFLE', { player_id: inspecting.pid })
+          () => handleAction('SHUFFLE', { player_id: inspecting.pid }),
+          // ▼ 追加: 上から指定枚数を公開
+          (count) => {
+            const newSet = new Set(revealedCardIds);
+            inspectingCards.slice(0, count).forEach(c => newSet.add(c.uuid));
+            setRevealedCardIds(newSet);
+          }
         );
         app.stage.addChild(overlay);
         overlayRef.current = overlay;
@@ -371,8 +372,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             const card = dragState.card; const endPos = { x: e.clientX, y: e.clientY };
             if ((card.type || '').toUpperCase() === 'LEADER') { setDragState(null); return; }
             
-            // ▼ 修正: 未使用の distFromStart 変数定義を削除
-
             if (inspecting && overlayRef.current) {
                  const { width: W, height: H } = app.screen;
                  const PANEL_W = Math.min(W * 0.95, 1200);
@@ -382,7 +381,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                  const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= PANEL_Y + PANEL_H;
                  if (inspecting.pid === ((endPos.y < H/2) ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1'))) {
                      if (isInsidePanel) {
-                         const HEADER_HEIGHT = 40;
+                         const HEADER_HEIGHT = 130; // ヘッダー高さを調整
                          const SCROLL_ZONE_HEIGHT = 70;
                          if (endPos.y > PANEL_Y + HEADER_HEIGHT && endPos.y < PANEL_Y + PANEL_H - SCROLL_ZONE_HEIGHT) {
                              const DISPLAY_CARD_WIDTH = 55; 
