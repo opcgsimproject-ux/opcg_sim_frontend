@@ -12,9 +12,9 @@ import type { GameState, CardInstance } from '../game/types';
 import { API_CONFIG } from '../api/api.config';
 import { logger } from '../utils/logger';
 import { handleLocalAction } from '../game/localActionHandler';
-import { getCardImageUrl } from '../utils/imageAssets';
+// 修正: 未使用のインポートを削除
+// import { getCardImageUrl } from '../utils/imageAssets';
 
-// --- 追加: GameStartと共通のモックデッキ定義 ---
 const MOCK_DECKS: Record<string, any> = {
   'imu.json': {
     leader: { name: "イム", card_id: "ST01-001", power: 5000, type: "LEADER", life: 5 },
@@ -58,7 +58,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   const [dragState, setDragState] = useState<DragState>(null);
   const [isPending, setIsPending] = useState(false);
   const [deckOptions, setDeckOptions] = useState<{id: string, name: string}[]>([]);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  // 修正: 未使用の isMobile ステートを削除
   const [inspecting, setInspecting] = useState<{ type: 'deck' | 'life' | 'trash', pid: string } | null>(null);
   const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(new Set());
   const [layoutCoords, setLayoutCoords] = useState<{ x: number, y: number } | null>(null);
@@ -130,11 +130,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       pressStartPosRef.current = null;
   };
 
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  // 修正: 未使用の resize effect (isMobile更新用) を削除
 
   useEffect(() => {
     const fetchDecks = async () => {
@@ -481,7 +477,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       } catch(e) { alert('エラー'); } finally { setIsPending(false); }
   };
 
-  // ▼ 変更: 待機画面（デッキ選択・READY画面）のレイアウト修正
   if (gameState && gameState.status === 'WAITING') {
     return (
       <div style={{ width: '100vw', height: '100vh', background: 'radial-gradient(circle at center, #2c3e50 0%, #000000 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box' }}>
