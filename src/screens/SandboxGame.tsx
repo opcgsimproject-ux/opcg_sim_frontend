@@ -7,7 +7,6 @@ import { createCardContainer } from '../ui/CardRenderer';
 import { createInspectOverlay } from '../ui/InspectOverlay';
 import type { InspectOverlayContainer } from '../ui/InspectOverlay';
 import { CardDetailSheet } from '../ui/CardDetailSheet';
-// ▼ 追加: 新しいモーダルをインポート
 import { DeckSelectModal, type DeckOption } from '../ui/DeckSelectModal';
 import { apiClient } from '../api/client';
 import type { GameState, CardInstance } from '../game/types';
@@ -452,23 +451,32 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           let localParams = { ...params };
           const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId;
 
+          // ▼ 共通: デッキデータ取得関数
+          const getDeckData = async (deckId: string) => {
+              if (!deckId) return { leader: [], cards: [] };
+              if (MOCK_DECKS[deckId]) return MOCK_DECKS[deckId];
+              let cacheKey = `opcg_deck_${deckId}`;
+              if (deckId.startsWith('db:')) cacheKey = `opcg_deck_${deckId.substring(3)}`;
+              const cached = localStorage.getItem(cacheKey);
+              if (cached) { try { return JSON.parse(cached); } catch(e) {} }
+              if (!deckId.startsWith('db:') && !['imu.json', 'nami.json'].includes(deckId)) return { leader: [], cards: [] };
+              const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`);
+              if (!res.ok) throw new Error();
+              const data = await res.json();
+              const finalData = data.deck || data;
+              localStorage.setItem(cacheKey, JSON.stringify(finalData));
+              return finalData;
+          };
+
+          // ▼ 1人回し用: SET_DECK時にデータをロードして渡す
+          if (isLocalMode && type === 'SET_DECK') {
+              const deckData = await getDeckData(params.deck_id);
+              localParams.deckData = deckData;
+          }
+
           if (type === 'START') {
               const p1DeckId = gameState.players.p1.name;
               const p2DeckId = gameState.players.p2.name;
-              const getDeckData = async (deckId: string) => {
-                  if (MOCK_DECKS[deckId]) return MOCK_DECKS[deckId];
-                  let cacheKey = `opcg_deck_${deckId}`;
-                  if (deckId.startsWith('db:')) cacheKey = `opcg_deck_${deckId.substring(3)}`;
-                  const cached = localStorage.getItem(cacheKey);
-                  if (cached) { try { return JSON.parse(cached); } catch(e) {} }
-                  if (!deckId.startsWith('db:') && !['imu.json', 'nami.json'].includes(deckId)) return { leader: [], cards: [] };
-                  const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId}`);
-                  if (!res.ok) throw new Error();
-                  const data = await res.json();
-                  const finalData = data.deck || data;
-                  localStorage.setItem(cacheKey, JSON.stringify(finalData));
-                  return finalData;
-              };
               const [d1, d2] = await Promise.all([getDeckData(p1DeckId), getDeckData(p2DeckId)]);
               localParams.p1Deck = d1; localParams.p2Deck = d2;
           }
@@ -497,7 +505,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
           {(['p1', 'p2'] as const).map(pid => {
             const playerState = gameState.players[pid];
-            // リーダーカードがある=デッキ選択済みとみなす簡易判定
             const leaderCard = playerState.leader;
             const hasDeck = !!leaderCard;
             
@@ -516,7 +523,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                 
                 {(pid === myPlayerId || myPlayerId === 'both') ? (
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    {/* ▼ 変更: クリックでデッキ選択モーダルを開くボタン */}
                     <div 
                       onClick={() => setSelectingDeckFor(pid)}
                       style={{ 
@@ -584,7 +590,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           </div>
         </div>
 
-        {/* ▼ 追加: 汎用コンポーネント化した DeckSelectModal を使用 */}
         {selectingDeckFor && (
           <DeckSelectModal 
             title={`デッキを選択 (${selectingDeckFor.toUpperCase()})`}
