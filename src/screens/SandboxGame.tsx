@@ -12,8 +12,9 @@ import type { GameState, CardInstance } from '../game/types';
 import { API_CONFIG } from '../api/api.config';
 import { logger } from '../utils/logger';
 import { handleLocalAction } from '../game/localActionHandler';
+import { getCardImageUrl } from '../utils/imageAssets';
 
-// --- 追加: GameStartと共通のモックデッキ定義 ---
+// --- モックデッキ定義 ---
 const MOCK_DECKS: Record<string, any> = {
   'imu.json': {
     leader: { name: "イム", card_id: "ST01-001", power: 5000, type: "LEADER", life: 5 },
@@ -45,6 +46,12 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
+interface DeckOption {
+  id: string;
+  name: string;
+  leaderId?: string; // リーダー画像の表示用
+}
+
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
 
 export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomName, onBack }: SandboxGameProps) => {
@@ -56,8 +63,12 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   const [activeGameId, setActiveGameId] = useState<string | null>(initialGameId || null);
   const [dragState, setDragState] = useState<DragState>(null);
   const [isPending, setIsPending] = useState(false);
-  const [deckOptions, setDeckOptions] = useState<{id: string, name: string}[]>([]);
-  // ▼ 修正: 未使用の isMobile を削除しました
+  
+  // ▼ 変更: DeckOption型を拡張してリーダーIDを保持
+  const [deckOptions, setDeckOptions] = useState<DeckOption[]>([]);
+  // ▼ 追加: デッキ選択モーダル用の状態
+  const [selectingDeckFor, setSelectingDeckFor] = useState<string | null>(null); // 'p1' | 'p2' | null
+
   const [inspecting, setInspecting] = useState<{ type: 'deck' | 'life' | 'trash', pid: string } | null>(null);
   const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(new Set());
   const [layoutCoords, setLayoutCoords] = useState<{ x: number, y: number } | null>(null);
@@ -129,11 +140,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       pressStartPosRef.current = null;
   };
 
-  // ▼ 修正: isMobile 用の resize イベントリスナーも不要になったため削除
-
   useEffect(() => {
     const fetchDecks = async () => {
-      const options: {id: string, name: string}[] = [];
+      const options: DeckOption[] = [];
 
       try {
         const localIds = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
@@ -141,7 +150,8 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           const deckData = localStorage.getItem(`opcg_deck_${id}`);
           if (deckData) {
             const parsed = JSON.parse(deckData);
-            options.push({ id: id, name: parsed.name || `Local Deck ${id}` });
+            // ▼ 変更: leader_idも取得
+            options.push({ id: id, name: parsed.name || `Local Deck ${id}`, leaderId: parsed.leader_id });
           }
         });
       } catch(e) { console.error(e); }
@@ -152,14 +162,17 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         if (data.success) {
           data.decks.forEach((d: any) => { 
             if (!d.id.endsWith('.json')) {
-              options.push({ id: `db:${d.id}`, name: d.name }); 
+              // ▼ 変更: leader_idも取得
+              options.push({ id: `db:${d.id}`, name: d.name, leaderId: d.leader_id }); 
             }
           });
         }
       } catch(e) { console.error(e); }
 
-      const uniqueOptions = Array.from(new Map(options.map(item => [item.id, item])).values());
-      setDeckOptions(uniqueOptions);
+      // 重複排除（簡易実装）
+      const uniqueMap = new Map();
+      options.forEach(o => uniqueMap.set(o.id, o));
+      setDeckOptions(Array.from(uniqueMap.values()));
     };
     fetchDecks();
   }, []);
@@ -445,11 +458,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       if (!isLocalMode && !activeGameId) return;
       setIsPending(true);
       try { 
-          // ▼ 変更: 対戦モードでもローカルロジックを使って状態計算を行う
           let localParams = { ...params };
           const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId;
 
-          // STARTアクション時のデッキデータ準備 (オンラインでもローカルでデータを用意する)
           if (type === 'START') {
               const p1DeckId = gameState.players.p1.name;
               const p2DeckId = gameState.players.p2.name;
@@ -471,18 +482,16 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
               localParams.p1Deck = d1; localParams.p2Deck = d2;
           }
 
-          // 1. ローカルで状態更新 (即時反映)
           const newState = handleLocalAction(gameState, type, { ...localParams, player_id: pid });
           setGameState(newState);
 
-          // 2. 対戦モードならサーバーへアクションを通知 (同期用)
           if (!isLocalMode) {
               await apiClient.sendSandboxAction(activeGameId!, { action_type: type, player_id: pid, ...params }); 
-              // サーバーからのレスポンス(res.state)は無視し、WebSocketからの更新を待つ
           }
       } catch(e) { console.error(e); alert('アクションエラー'); } finally { setIsPending(false); }
   };
 
+  // --- 待機画面のレンダリング ---
   if (gameState && gameState.status === 'WAITING') {
     return (
       <div style={{ width: '100vw', height: '100vh', background: 'radial-gradient(circle at center, #2c3e50 0%, #000000 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box' }}>
@@ -495,47 +504,74 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             {gameState.room_name || 'GAME SETUP'}
           </h2>
 
-          {(['p1', 'p2'] as const).map(pid => (
-            <div key={pid} style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ color: '#bdc3c7', fontSize: '12px', fontWeight: 'bold' }}>
-                  {pid === 'p1' ? 'Player 1' : 'Player 2'}
-                </label>
-                {gameState.ready_states?.[pid] ? (
-                  <span style={{ color: '#2ecc71', fontSize: '10px', fontWeight: 'bold' }}>READY</span>
+          {(['p1', 'p2'] as const).map(pid => {
+            // リーダーカードの特定
+            // gameState.players[pid].leader は初期状態では null かもしれない
+            // サーバーから同期された状態に leader 情報があればそれを使う
+            const playerState = gameState.players[pid];
+            const leaderCard = playerState.leader;
+            const hasDeck = !!leaderCard;
+            
+            return (
+              <div key={pid} style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ color: '#bdc3c7', fontSize: '12px', fontWeight: 'bold' }}>
+                    {pid === 'p1' ? 'Player 1' : 'Player 2'}
+                  </label>
+                  {gameState.ready_states?.[pid] ? (
+                    <span style={{ color: '#2ecc71', fontSize: '10px', fontWeight: 'bold' }}>READY</span>
+                  ) : (
+                    <span style={{ color: '#e74c3c', fontSize: '10px' }}>NOT READY</span>
+                  )}
+                </div>
+                
+                {(pid === myPlayerId || myPlayerId === 'both') ? (
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    {/* デッキ選択エリア (画像表示または選択ボタン) */}
+                    <div 
+                      onClick={() => setSelectingDeckFor(pid)}
+                      style={{ 
+                        flex: 1, height: '60px', 
+                        background: '#2a1a1a', border: '1px solid #5d4037', borderRadius: '4px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', overflow: 'hidden', position: 'relative'
+                      }}
+                    >
+                      {hasDeck ? (
+                        <>
+                          <img 
+                            src={getCardImageUrl(leaderCard?.card_id)} 
+                            alt="leader"
+                            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.6 }} 
+                          />
+                          <span style={{ zIndex: 1, fontWeight: 'bold', textShadow: '0 2px 4px black' }}>{leaderCard?.name || 'Deck Selected'}</span>
+                        </>
+                      ) : (
+                        <span style={{ color: '#7f8c8d', fontSize: '14px' }}>＋ デッキを選択</span>
+                      )}
+                    </div>
+
+                    <button 
+                      onClick={() => handleAction('READY', { player_id: pid })} 
+                      disabled={!hasDeck}
+                      style={{ 
+                        width: '80px', height: '60px',
+                        background: gameState.ready_states?.[pid] ? '#2ecc71' : (hasDeck ? '#e67e22' : '#555'), 
+                        color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: hasDeck ? 'pointer' : 'not-allowed'
+                      }}
+                    >
+                      {gameState.ready_states?.[pid] ? 'OK' : 'SET'}
+                    </button>
+                  </div>
                 ) : (
-                  <span style={{ color: '#e74c3c', fontSize: '10px' }}>NOT READY</span>
+                  // 相手プレイヤーの表示
+                  <div style={{ height: '60px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7f8c8d', fontSize: '14px', border: '1px dashed #555' }}>
+                    {hasDeck ? 'Deck Selected' : 'Waiting for selection...'}
+                  </div>
                 )}
               </div>
-              
-              {(pid === myPlayerId || myPlayerId === 'both') ? (
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <select 
-                    style={{ flex: 1, padding: '10px', background: '#2a1a1a', color: '#f0e6d2', border: '1px solid #5d4037', borderRadius: '4px', fontSize: '14px' }} 
-                    value={gameState.players[pid].name}
-                    onChange={(e) => handleAction('SET_DECK', { player_id: pid, deck_id: e.target.value })}
-                  >
-                    <option value="">デッキを選択...</option>
-                    {deckOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
-                  </select>
-                  <button 
-                    onClick={() => handleAction('READY', { player_id: pid })} 
-                    style={{ 
-                      padding: '0 15px', 
-                      background: gameState.ready_states?.[pid] ? '#2ecc71' : '#95a5a6', 
-                      color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' 
-                    }}
-                  >
-                    {gameState.ready_states?.[pid] ? 'OK' : 'SET'}
-                  </button>
-                </div>
-              ) : (
-                <div style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', color: '#7f8c8d', fontSize: '14px', textAlign: 'center' }}>
-                  {gameState.players[pid].name ? 'Deck Selected' : 'Selecting...'}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
 
           <div style={{ textAlign: 'center', color: '#95a5a6', fontStyle: 'italic', margin: '-10px 0' }}>VS</div>
 
@@ -559,10 +595,53 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             )}
           </div>
         </div>
+
+        {/* デッキ選択モーダル */}
+        {selectingDeckFor && (
+          <div style={{ 
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', zIndex: 3000,
+            display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px'
+          }}>
+            <div style={{ width: '100%', maxWidth: '800px', maxHeight: '80vh', background: '#222', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ padding: '15px', borderBottom: '1px solid #444', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, color: '#f0e6d2' }}>デッキを選択 ({selectingDeckFor.toUpperCase()})</h3>
+                <button onClick={() => setSelectingDeckFor(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer' }}>×</button>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '15px' }}>
+                {deckOptions.map(opt => (
+                  <div 
+                    key={opt.id} 
+                    onClick={() => {
+                      handleAction('SET_DECK', { player_id: selectingDeckFor, deck_id: opt.id });
+                      setSelectingDeckFor(null);
+                    }}
+                    style={{ 
+                      background: '#333', borderRadius: '8px', cursor: 'pointer', overflow: 'hidden', border: '1px solid #555',
+                      display: 'flex', flexDirection: 'column', aspectRatio: '0.7'
+                    }}
+                    className="hover-scale"
+                  >
+                    <div style={{ flex: 1, background: '#000', position: 'relative' }}>
+                      {opt.leaderId ? (
+                        <img src={getCardImageUrl(opt.leaderId)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="leader" />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>No Image</div>
+                      )}
+                    </div>
+                    <div style={{ padding: '8px', fontSize: '12px', textAlign: 'center', background: 'rgba(0,0,0,0.5)', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {opt.name}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
+  // --- ゲーム画面のレンダリング (変更なし) ---
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', background: '#000' }}>
       <div ref={pixiContainerRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: inspecting ? 200 : 1 }} />
