@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { logger } from '../utils/logger';
 import { API_CONFIG } from '../api/api.config';
+// ▼ 変更: 画像URL取得関数をインポート
+import { getCardImageUrl } from '../utils/imageAssets';
 
 interface CardData {
   uuid: string;
@@ -49,7 +51,8 @@ const getLocalDecks = (): DeckData[] => {
 
 const CardImageStub = ({ card, count, onClick }: { card: CardData | { name: string, uuid?: string }, count?: number, onClick?: () => void }) => {
   const [imgError, setImgError] = useState(false);
-  const imageUrl = card.uuid ? `${API_CONFIG.IMAGE_BASE_URL}/${card.uuid}.png` : null;
+  // ▼ 変更: uuidを引数にしてURL取得
+  const imageUrl = getCardImageUrl(card.uuid || '');
 
   return (
     <div 
@@ -88,7 +91,8 @@ const CardImageStub = ({ card, count, onClick }: { card: CardData | { name: stri
 const CardDetailScreen = ({ card, currentCount, onCountChange, onClose, onNavigate, viewOnly }: {
   card: CardData, currentCount: number, onCountChange: (diff: number) => void, onClose: () => void, onNavigate?: (direction: -1 | 1) => void, viewOnly?: boolean
 }) => {
-  const imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/${card.uuid}.png`;
+  // ▼ 変更: uuidを引数にしてURL取得
+  const imageUrl = getCardImageUrl(card.uuid);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const minSwipeDistance = 50;
@@ -158,6 +162,7 @@ const CardDetailScreen = ({ card, currentCount, onCountChange, onClose, onNaviga
   );
 };
 
+// ... (FilterModal, DeckDistributionModal は前回と同じため省略: 変更なし) ...
 const FilterModal = ({ initialFilters, onApply, traitList, setList, onClose }: { initialFilters: FilterState, onApply: (f: FilterState) => void, traitList: string[], setList: string[], onClose: () => void }) => {
   const [localFilters, setLocalFilters] = useState<FilterState>(initialFilters);
   const [traitSearch, setTraitSearch] = useState('');
@@ -400,8 +405,9 @@ const DeckListView = ({ decks, onSelectDeck, onCreateNew, onBack }: { decks: Dec
         {decks.map((deck, idx) => (
             <div key={deck.id || idx} onClick={() => onSelectDeck(deck)} style={{ display: 'flex', alignItems: 'center', background: '#333', border: '1px solid #444', borderRadius: '8px', padding: '10px', cursor: 'pointer' }}>
                 <div style={{ width: '50px', height: '70px', background: '#222', border: '1px solid #555', borderRadius: '4px', marginRight: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#aaa', overflow: 'hidden', flexShrink: 0 }}>
+                    {/* ▼ 変更: leader_id からURL取得 */}
                     {deck.leader_id ? (
-                      <img src={`${API_CONFIG.IMAGE_BASE_URL}/${deck.leader_id}.png`} alt="leader" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerText = deck.leader_id || "Err"; }} />
+                      <img src={getCardImageUrl(deck.leader_id)} alt="leader" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerText = deck.leader_id || "Err"; }} />
                     ) : "No Leader"}
                 </div>
                 <div style={{ flex: 1 }}>
@@ -477,7 +483,6 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
     color: [], type: [], attribute: [], traits: [], counter: [], cost: [], power: [], trigger: [], sets: [], sort: 'COST'
   });
   const [searchText, setSearchText] = useState('');
-  // ▼ 追加: 入力用の一時テキスト
   const [inputText, setInputText] = useState('');
 
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -566,7 +571,6 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
       res = res.filter(c => filters.sets.some(s => c.uuid.startsWith(s)));
     }
 
-    // ▼ searchText は「Enter」か「虫眼鏡」が押された時のみ更新される値
     if (searchText) {
       const lower = searchText.toLowerCase();
       res = res.filter(c => (c.name?.toLowerCase().includes(lower)) || (c.text?.toLowerCase().includes(lower)));
@@ -611,7 +615,6 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
     }
   };
 
-  // ▼ 検索実行ハンドラ
   const executeSearch = () => {
     setSearchText(inputText);
   };
@@ -641,7 +644,6 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
           完了
         </button>
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          {/* ▼ 修正: inputはinputTextを更新、EnterキーでexecuteSearch */}
           <input 
             placeholder="キーワード検索 (Enterで検索)" 
             value={inputText} 
@@ -663,7 +665,6 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
               boxSizing: 'border-box'
             }} 
           />
-          {/* ▼ 修正: 虫眼鏡をボタン化してクリック可能に */}
           <button 
             onClick={executeSearch}
             style={{ 
@@ -752,7 +753,6 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
         try {
           const dRes = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
           const dData = await dRes.json();
-          // ▼ 修正: JSON由来のデフォルトデッキ(.json)を除外
           if (dData.success && Array.isArray(dData.decks)) {
              serverDecks = dData.decks.filter((d: DeckData) => !d.id || !d.id.endsWith('.json'));
           }

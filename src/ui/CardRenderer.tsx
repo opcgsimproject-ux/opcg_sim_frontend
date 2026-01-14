@@ -2,7 +2,8 @@ import * as PIXI from 'pixi.js';
 import { LAYOUT_CONSTANTS, LAYOUT_PARAMS } from '../layout/layout.config';
 import { GAME_UI_CONFIG } from '../game/game.config';
 import { logger } from '../utils/logger';
-import { API_CONFIG } from '../api/api.config';
+// ▼ 変更: API_CONFIGの直接参照をやめ、imageAssetsから関数をインポート
+import { getCardImageUrl, getBackImageUrl } from '../utils/imageAssets';
 
 const { COLORS, SIZES } = LAYOUT_CONSTANTS;
 const { SHAPE, UI_DETAILS, PHYSICS } = LAYOUT_PARAMS;
@@ -14,11 +15,9 @@ export const createCardContainer = (
   options: { count?: number; onClick: () => void; isOpponent?: boolean }
 ) => {
   const container = new PIXI.Container();
-  // ▼▼▼ 追加: UUIDをコンテナ名として設定（DnD用） ▼▼▼
   if (card?.uuid) {
     container.name = card.uuid;
   }
-  // ▲▲▲ 追加ここまで ▲▲▲
 
   const isOpponent = options.isOpponent ?? false;
   const isRest = card?.is_rest === true;
@@ -36,16 +35,16 @@ export const createCardContainer = (
   if (!isEmpty) {
     if (cardName === 'Don!! Deck') {
       // ドンデッキ裏面
-      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/DON_back.png`;
+      imageUrl = getBackImageUrl('DON');
     } else if (cardName === 'Deck' || cardName === 'Life') {
       // デッキ・ライフ裏面
-      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/OPCG_back.png`;
+      imageUrl = getBackImageUrl('MAIN');
     } else if (isBack) {
       // その他の裏面カード（手札など）
-      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/OPCG_back.png`;
+      imageUrl = getBackImageUrl('MAIN');
     } else if (card?.card_id) {
       // 表面: IDがある場合 (DONを含む)
-      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/${card.card_id}.png`;
+      imageUrl = getCardImageUrl(card.card_id);
     }
   }
 
@@ -89,7 +88,6 @@ export const createCardContainer = (
     // 画像なし & 裏面でない場合のフォールバック（色塗り）
     const g = new PIXI.Graphics();
     g.lineStyle(SHAPE.STROKE_WIDTH_ZONE, COLORS.ZONE_BORDER);
-    // isBackのケースは上でimageUrlが設定されるはずだが念のため
     g.beginFill(isBack ? COLORS.CARD_BACK : COLORS.ZONE_FILL);
     g.drawRoundedRect(-cw / 2, -ch / 2, cw, ch, SHAPE.CORNER_RADIUS_CARD);
     g.endFill();

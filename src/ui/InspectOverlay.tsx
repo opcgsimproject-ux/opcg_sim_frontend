@@ -2,7 +2,8 @@ import * as PIXI from 'pixi.js';
 import { createCardContainer } from './CardRenderer';
 import type { CardInstance } from '../game/types';
 import { LAYOUT_PARAMS } from '../layout/layout.config';
-import { API_CONFIG } from '../api/api.config';
+// ▼ 変更: imageAssetsから関数をインポート
+import { getBackImageUrl } from '../utils/imageAssets';
 
 export interface InspectOverlayContainer extends PIXI.Container {
   updateLayout: (draggingGlobalX: number | null, draggingUuid: string | null) => void;
@@ -125,10 +126,11 @@ export const createInspectOverlay = (
   const cardSprites: { sprite: PIXI.Container, card: CardInstance, originalIndex: number }[] = [];
 
   cards.forEach((card, i) => {
-    // ▼ 変更: type === 'deck' || type === 'life' を削除し、デフォルトを裏向きに戻す
+    // デフォルトは裏向き。クリックで公開。
     const isRevealed = type === 'trash' || type === 'hand' || revealedCardIds.has(card.uuid);
     const displayCard = { ...card, is_face_up: isRevealed };
     
+    // CardRenderer側でgetCardImageUrlが使われる
     const cardSprite = createCardContainer(displayCard, BASE_CARD_WIDTH, BASE_CARD_HEIGHT, { 
       onClick: () => {}
     });
@@ -137,7 +139,8 @@ export const createInspectOverlay = (
     cardSprite.scale.set(scale);
 
     if (!isRevealed) {
-      const backTexture = PIXI.Texture.from(`${API_CONFIG.IMAGE_BASE_URL}/OPCG_back.png`);
+      // ▼ 変更: 裏面画像の取得
+      const backTexture = PIXI.Texture.from(getBackImageUrl('MAIN'));
       const backSprite = new PIXI.Sprite(backTexture);
       backSprite.width = BASE_CARD_WIDTH;
       backSprite.height = BASE_CARD_HEIGHT;
@@ -260,9 +263,6 @@ export const createInspectOverlay = (
       }
       const X_OFFSET = TOTAL_CARD_WIDTH / 2 + 20;
       const targetX = visualIndex * TOTAL_CARD_WIDTH + X_OFFSET - currentScrollX;
-      
-      // ▼ 変更: カードのY座標を上にずらす (LIST_H / 2 -> LIST_H / 3)
-      // これにより下部のボタン領域を確保し、上部の隙間を埋める
       sprite.position.set(targetX, LIST_H / 3);
     });
   };
