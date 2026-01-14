@@ -7,6 +7,7 @@ import { createCardContainer } from '../ui/CardRenderer';
 import { createInspectOverlay } from '../ui/InspectOverlay';
 import type { InspectOverlayContainer } from '../ui/InspectOverlay';
 import { CardDetailSheet } from '../ui/CardDetailSheet';
+import { CardSelectModal } from '../ui/CardSelectModal';
 import { DeckSelectModal, type DeckOption } from '../ui/DeckSelectModal';
 import { apiClient } from '../api/client';
 import type { GameState, CardInstance } from '../game/types';
@@ -47,6 +48,12 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
+interface DeckOption {
+  id: string;
+  name: string;
+  leaderId?: string;
+}
+
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
 
 export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomName, onBack }: SandboxGameProps) => {
@@ -66,6 +73,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(new Set());
   const [layoutCoords, setLayoutCoords] = useState<{ x: number, y: number } | null>(null);
   const [dropChoice, setDropChoice] = useState<{ card: CardInstance, destPid: string, destZone: string } | null>(null);
+  
+  const [replacementState, setReplacementState] = useState<{ card: CardInstance, destPid: string } | null>(null);
+  
   const [selectedCard, setSelectedCard] = useState<CardInstance | null>(null);
   const inspectScrollXRef = useRef(20);
   const { COLORS } = LAYOUT_CONSTANTS;
@@ -428,7 +438,21 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         }
         const detectedZone = checkZone(isTopArea); 
         if (detectedZone === 'deck' || detectedZone === 'life') { setDropChoice({ card, destPid, destZone: detectedZone }); setDragState(null); return; } 
-        else if (detectedZone) { destZone = detectedZone; }
+        else if (detectedZone) { 
+            destZone = detectedZone;
+            
+            if (destZone === 'field') {
+                const destP = destPid === 'p1' ? gameState?.players.p1 : gameState?.players.p2;
+                if (destP && destP.zones.field.length >= 5) {
+                    const isAlreadyOnField = destP.zones.field.some(c => c.uuid === card.uuid);
+                    if (!isAlreadyOnField) {
+                        setReplacementState({ card, destPid });
+                        setDragState(null);
+                        return;
+                    }
+                }
+            }
+        }
         const animateAndSend = () => {
             const tx = endPos.x; const ty = endPos.y; const sprite = dragState.sprite;
             const step = () => {
@@ -443,6 +467,18 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     return () => { window.removeEventListener('pointermove', onPointerMove); window.removeEventListener('pointerup', onPointerUp); };
   }, [dragState, gameState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
 
+  const handleReplacement = async (trashCardUuids: string[]) => {
+    if (!replacementState || trashCardUuids.length === 0) return;
+    const { card, destPid } = replacementState;
+    const trashUuid = trashCardUuids[0];
+
+    await handleAction('MOVE_CARD', { card_uuid: trashUuid, dest_player_id: destPid, dest_zone: 'trash' });
+    
+    await handleAction('MOVE_CARD', { card_uuid: card.uuid, dest_player_id: destPid, dest_zone: 'field' });
+    
+    setReplacementState(null);
+  };
+
   const handleAction = async (type: string, params: any) => {
       if (isPending || !gameState) return;
       if (!isLocalMode && !activeGameId) return;
@@ -451,7 +487,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           let localParams = { ...params };
           const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId;
 
-          // ▼ 共通: デッキデータ取得関数
           const getDeckData = async (deckId: string) => {
               if (!deckId) return { leader: [], cards: [] };
               if (MOCK_DECKS[deckId]) return MOCK_DECKS[deckId];
@@ -468,7 +503,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
               return finalData;
           };
 
-          // ▼ 1人回し用: SET_DECK時にデータをロードして渡す
           if (isLocalMode && type === 'SET_DECK') {
               const deckData = await getDeckData(params.deck_id);
               localParams.deckData = deckData;
@@ -490,7 +524,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       } catch(e) { console.error(e); alert('アクションエラー'); } finally { setIsPending(false); }
   };
 
-  // --- 待機画面のレンダリング ---
   if (gameState && gameState.status === 'WAITING') {
     return (
       <div style={{ width: '100vw', height: '100vh', background: 'radial-gradient(circle at center, #2c3e50 0%, #000000 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box' }}>
@@ -605,7 +638,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     );
   }
 
-  // --- ゲーム画面のレンダリング (変更なし) ---
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', background: '#000' }}>
       <div ref={pixiContainerRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: inspecting ? 200 : 1 }} />
@@ -623,6 +655,18 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       )}
       {!gameState && <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', color: 'white' }}><h2>Loading...</h2></div>}
       {selectedCard && <CardDetailSheet card={selectedCard} location="unknown" isMyTurn={false} onAction={async () => {}} onClose={() => setSelectedCard(null)} />}
+      
+      {replacementState && gameState && (
+        <CardSelectModal
+          candidates={gameState.players[replacementState.destPid as 'p1'|'p2'].zones.field}
+          message="キャラクターエリアが一杯です。入れ替えるカード（トラッシュに送るカード）を選択してください。"
+          minSelect={1}
+          maxSelect={1}
+          onConfirm={handleReplacement}
+          onCancel={() => setReplacementState(null)}
+        />
+      )}
+
       {gameState && (
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 100, pointerEvents: 'none' }}>
             <div style={{ position: 'absolute', top: '10px', left: '10px', display: 'flex', gap: 10, pointerEvents: 'auto' }}>
@@ -651,7 +695,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                     )}
                 </div>
             )}
-            {/* ▼ 修正: ボタンを中心に配置し、縦幅を「TOPへ」ボタンと統一 */}
             <button 
               onClick={() => handleAction('TURN_END', {})} 
               disabled={isPending || !isMyTurn || isActionBlockedByMulligan} 
@@ -659,12 +702,13 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                 position: 'absolute', 
                 left: layoutCoords ? `${layoutCoords.x + 40}px` : 'auto', 
                 top: layoutCoords ? `${layoutCoords.y}px` : '50%', 
-                transform: 'translateY(-50%)', // 中心配置
-                padding: '5px 20px', // 縦幅をTOPへボタン(5px)に合わせる
+                transform: 'translateY(-50%)',
+                padding: '5px 20px',
                 backgroundColor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? COLORS.BTN_DISABLED : COLORS.BTN_PRIMARY, 
                 color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', pointerEvents: 'auto', 
                 cursor: (isPending || !isMyTurn || isActionBlockedByMulligan) ? 'not-allowed' : 'pointer', 
-                opacity: (isMyTurn && !isActionBlockedByMulligan) ? 1 : 0.6 
+                opacity: (isMyTurn && !isActionBlockedByMulligan) ? 1 : 0.6,
+                whiteSpace: 'nowrap'
               }}
             >
               {isPending ? '送信中' : '終了'}
