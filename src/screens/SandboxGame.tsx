@@ -12,6 +12,7 @@ import type { GameState, CardInstance } from '../game/types';
 import { API_CONFIG } from '../api/api.config';
 import { logger } from '../utils/logger';
 import { handleLocalAction } from '../game/localActionHandler';
+// ▼ 修正: 画像URL取得関数をインポート
 import { getCardImageUrl } from '../utils/imageAssets';
 
 // --- モックデッキ定義 ---
@@ -46,10 +47,11 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
+// ▼ 追加: デッキ選択肢の型定義（リーダー画像用IDを含む）
 interface DeckOption {
   id: string;
   name: string;
-  leaderId?: string; // リーダー画像の表示用
+  leaderId?: string; 
 }
 
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
@@ -64,10 +66,10 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   const [dragState, setDragState] = useState<DragState>(null);
   const [isPending, setIsPending] = useState(false);
   
-  // ▼ 変更: DeckOption型を拡張してリーダーIDを保持
+  // ▼ 変更: DeckOption型を使用
   const [deckOptions, setDeckOptions] = useState<DeckOption[]>([]);
-  // ▼ 追加: デッキ選択モーダル用の状態
-  const [selectingDeckFor, setSelectingDeckFor] = useState<string | null>(null); // 'p1' | 'p2' | null
+  // ▼ 追加: デッキ選択モーダルを表示するプレイヤーID ('p1' | 'p2' | null)
+  const [selectingDeckFor, setSelectingDeckFor] = useState<string | null>(null);
 
   const [inspecting, setInspecting] = useState<{ type: 'deck' | 'life' | 'trash', pid: string } | null>(null);
   const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(new Set());
@@ -150,7 +152,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           const deckData = localStorage.getItem(`opcg_deck_${id}`);
           if (deckData) {
             const parsed = JSON.parse(deckData);
-            // ▼ 変更: leader_idも取得
+            // ▼ 変更: leader_idも取得してリストに含める
             options.push({ id: id, name: parsed.name || `Local Deck ${id}`, leaderId: parsed.leader_id });
           }
         });
@@ -169,7 +171,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
         }
       } catch(e) { console.error(e); }
 
-      // 重複排除（簡易実装）
+      // 重複排除（IDベース）
       const uniqueMap = new Map();
       options.forEach(o => uniqueMap.set(o.id, o));
       setDeckOptions(Array.from(uniqueMap.values()));
@@ -505,10 +507,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           </h2>
 
           {(['p1', 'p2'] as const).map(pid => {
-            // リーダーカードの特定
-            // gameState.players[pid].leader は初期状態では null かもしれない
-            // サーバーから同期された状態に leader 情報があればそれを使う
             const playerState = gameState.players[pid];
+            // サーバー状態またはローカル選択状態からデッキ情報を判断
+            // ※リーダーカードがある=デッキ選択済みとみなす簡易判定
             const leaderCard = playerState.leader;
             const hasDeck = !!leaderCard;
             
@@ -527,7 +528,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                 
                 {(pid === myPlayerId || myPlayerId === 'both') ? (
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    {/* デッキ選択エリア (画像表示または選択ボタン) */}
+                    {/* ▼ 修正: ドロップダウンを廃止し、クリック可能なデッキ選択エリアに変更 */}
                     <div 
                       onClick={() => setSelectingDeckFor(pid)}
                       style={{ 
@@ -539,6 +540,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                     >
                       {hasDeck ? (
                         <>
+                          {/* リーダー画像を表示 */}
                           <img 
                             src={getCardImageUrl(leaderCard?.card_id)} 
                             alt="leader"
@@ -564,7 +566,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                     </button>
                   </div>
                 ) : (
-                  // 相手プレイヤーの表示
                   <div style={{ height: '60px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7f8c8d', fontSize: '14px', border: '1px dashed #555' }}>
                     {hasDeck ? 'Deck Selected' : 'Waiting for selection...'}
                   </div>
@@ -596,7 +597,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           </div>
         </div>
 
-        {/* デッキ選択モーダル */}
+        {/* ▼ 追加: デッキ選択モーダル (リスト形式・画像付き) */}
         {selectingDeckFor && (
           <div style={{ 
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', zIndex: 3000,
@@ -607,7 +608,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                 <h3 style={{ margin: 0, color: '#f0e6d2' }}>デッキを選択 ({selectingDeckFor.toUpperCase()})</h3>
                 <button onClick={() => setSelectingDeckFor(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer' }}>×</button>
               </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '15px' }}>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {deckOptions.map(opt => (
                   <div 
                     key={opt.id} 
@@ -616,21 +617,28 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                       setSelectingDeckFor(null);
                     }}
                     style={{ 
-                      background: '#333', borderRadius: '8px', cursor: 'pointer', overflow: 'hidden', border: '1px solid #555',
-                      display: 'flex', flexDirection: 'column', aspectRatio: '0.7'
+                      display: 'flex', alignItems: 'center',
+                      background: '#333', borderRadius: '8px', cursor: 'pointer', border: '1px solid #555',
+                      padding: '10px', minHeight: '80px', transition: 'background 0.2s'
                     }}
                     className="hover-scale"
+                    onMouseOver={(e) => e.currentTarget.style.background = '#444'}
+                    onMouseOut={(e) => e.currentTarget.style.background = '#333'}
                   >
-                    <div style={{ flex: 1, background: '#000', position: 'relative' }}>
+                    {/* 左側: リーダー画像 */}
+                    <div style={{ width: '50px', height: '70px', flexShrink: 0, marginRight: '15px', background: '#000', borderRadius: '4px', overflow: 'hidden', border: '1px solid #666' }}>
                       {opt.leaderId ? (
                         <img src={getCardImageUrl(opt.leaderId)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="leader" />
                       ) : (
-                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>No Image</div>
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: '10px' }}>No Img</div>
                       )}
                     </div>
-                    <div style={{ padding: '8px', fontSize: '12px', textAlign: 'center', background: 'rgba(0,0,0,0.5)', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {/* 右側: デッキ名 */}
+                    <div style={{ flex: 1, color: '#fff', fontWeight: 'bold', fontSize: '16px' }}>
                       {opt.name}
                     </div>
+                    {/* 矢印アイコン */}
+                    <div style={{ color: '#666', fontSize: '20px', marginLeft: '10px' }}>›</div>
                   </div>
                 ))}
               </div>
