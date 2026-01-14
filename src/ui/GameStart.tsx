@@ -25,10 +25,13 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
   const [p1Deck, setP1Deck] = useState('imu.json');
   const [p2Deck, setP2Deck] = useState('nami.json');
   
-  // ▼ 変更: 'solo' を削除 (モーダル不要のため)
-  const [activeModal, setActiveModal] = useState<'none' | 'cpu'>('none');
+  // ▼ 変更: 'multi' モーダルを追加
+  const [activeModal, setActiveModal] = useState<'none' | 'solo' | 'cpu' | 'multi'>('none');
   const [downloadProgress, setDownloadProgress] = useState<{current: number, total: number} | null>(null);
   
+  // ▼ 追加: 部屋名入力用
+  const [roomName, setRoomName] = useState('');
+
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [contentScale, setContentScale] = useState(1);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -43,10 +46,10 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
 
   useLayoutEffect(() => {
     if (contentRef.current) {
-      const HEADER_HEIGHT = 60; 
-      const BOTTOM_PADDING = 20; 
+      const HEADER_HEIGHT = 60;
+      const BOTTOM_PADDING = 20;
       const availableHeight = windowSize.height - HEADER_HEIGHT - BOTTOM_PADDING;
-      const contentHeight = contentRef.current.scrollHeight; 
+      const contentHeight = contentRef.current.scrollHeight;
 
       if (contentHeight > availableHeight) {
         const newScale = availableHeight / contentHeight;
@@ -126,35 +129,16 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       pointerEvents: 'none' as const, zIndex: 0
     },
     header: {
-      width: '100%',
-      display: 'flex',
-      justifyContent: 'flex-end',
-      padding: '10px 20px',
-      zIndex: 10,
-      flexShrink: 0,
-      height: '60px',
-      boxSizing: 'border-box' as const
+      width: '100%', display: 'flex', justifyContent: 'flex-end',
+      padding: '10px 20px', zIndex: 10, flexShrink: 0, height: '60px', boxSizing: 'border-box' as const
     },
     scaleWrapper: {
-      flex: 1,
-      width: '100%',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'flex-start',
-      overflow: 'hidden',
-      zIndex: 1
+      flex: 1, width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflow: 'hidden', zIndex: 1
     },
     scaledContent: {
-      width: '100%',
-      maxWidth: '900px',
-      padding: '0 20px',
-      boxSizing: 'border-box' as const,
-      transform: `scale(${contentScale})`,
-      transformOrigin: 'top center',
-      transition: 'transform 0.1s ease-out',
-      display: 'flex', 
-      flexDirection: 'column' as const, 
-      gap: '30px'
+      width: '100%', maxWidth: '900px', padding: '0 20px', boxSizing: 'border-box' as const,
+      transform: `scale(${contentScale})`, transformOrigin: 'top center', transition: 'transform 0.1s ease-out',
+      display: 'flex', flexDirection: 'column' as const, gap: '30px'
     },
     title: {
       fontSize: isMobile ? '40px' : '60px', fontWeight: '900', textAlign: 'center' as const, 
@@ -163,44 +147,34 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', 
       filter: 'drop-shadow(0 4px 0px rgba(0,0,0,0.8))', letterSpacing: '4px', textTransform: 'uppercase' as const
     },
-    section: {
-      display: 'flex', flexDirection: 'column' as const, gap: '15px'
-    },
+    section: { display: 'flex', flexDirection: 'column' as const, gap: '15px' },
     sectionTitle: {
       fontSize: '18px', color: '#8b8b8b', borderBottom: '1px solid #444', paddingBottom: '5px', marginBottom: '5px',
       textTransform: 'uppercase' as const, letterSpacing: '2px'
     },
-    grid: {
-      display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px'
-    },
+    grid: { display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' },
     menuCard: (color: string) => ({
-      background: 'rgba(255,255,255,0.05)', border: `1px solid ${color}`, borderRadius: '8px', 
-      padding: '20px',
+      background: 'rgba(255,255,255,0.05)', border: `1px solid ${color}`, borderRadius: '8px', padding: '20px',
       display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: '10px',
-      cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(0,0,0,0.3)', 
-      minHeight: '100px'
+      cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(0,0,0,0.3)', minHeight: '100px'
     }),
     cardLabel: { fontSize: '18px', fontWeight: 'bold', color: '#eee', textAlign: 'center' as const },
     cardDesc: { fontSize: '12px', color: '#aaa', textAlign: 'center' as const },
-    
     dlBtn: {
       background: 'rgba(0, 0, 0, 0.4)', border: '1px solid #555', color: '#888',
       fontSize: '11px', padding: '6px 12px', borderRadius: '20px',
       cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
       backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', gap: '5px'
     },
-
     modalOverlay: {
       position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000,
-      display: 'flex', justifyContent: 'center', alignItems: 'center',
-      backdropFilter: 'blur(5px)'
+      display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(5px)'
     },
     modalPanel: {
       background: '#2c3e50', padding: '30px', borderRadius: '12px',
       border: '2px solid #7f8c8d', width: '90%', maxWidth: '500px',
-      display: 'flex', flexDirection: 'column' as const, gap: '20px',
-      boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+      display: 'flex', flexDirection: 'column' as const, gap: '20px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
     },
     modalTitle: {
       color: '#f1c40f', fontSize: '24px', fontWeight: 'bold', textAlign: 'center' as const,
@@ -235,23 +209,19 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     <div style={styles.modalOverlay}>
       <div style={styles.modalPanel}>
         <div style={styles.modalTitle}>{title}</div>
-        
         <div>
           <label style={{display:'block', color:'#bdc3c7', fontSize:'12px'}}>Player 1 (あなた)</label>
           <select value={p1Deck} onChange={(e) => setP1Deck(e.target.value)} style={styles.select}>
             {deckOptions.map(opt => <option key={`p1-${opt.id}`} value={opt.id}>{opt.name}</option>)}
           </select>
         </div>
-
         <div style={{textAlign:'center', color:'#95a5a6', fontStyle:'italic'}}>VS</div>
-
         <div>
           <label style={{display:'block', color:'#bdc3c7', fontSize:'12px'}}>Player 2 (相手/CPU)</label>
           <select value={p2Deck} onChange={(e) => setP2Deck(e.target.value)} style={styles.select}>
             {deckOptions.map(opt => <option key={`p2-${opt.id}`} value={opt.id}>{opt.name}</option>)}
           </select>
         </div>
-
         <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
           <button onClick={() => setActiveModal('none')} style={styles.actionBtn(false)}>キャンセル</button>
           <button onClick={onConfirm} style={styles.actionBtn(true)}>開始</button>
@@ -264,85 +234,87 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     <div style={styles.container}>
       <div style={styles.bgOverlay}></div>
       
-      {/* Header Area */}
       <div style={styles.header}>
-        <button 
-          onClick={handleCacheImages} 
-          disabled={!!downloadProgress}
-          style={styles.dlBtn}
-          title="全てのカード画像をダウンロードしてキャッシュします"
-        >
-          {downloadProgress ? (
-            <>
-              <span style={{ width: '10px', height: '10px', border: '2px solid #888', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }}></span>
-              {`DL中: ${Math.floor((downloadProgress.current / downloadProgress.total) * 100)}%`}
-            </>
-          ) : (
-            <><span>📥</span> 画像一括DL</>
-          )}
+        <button onClick={handleCacheImages} disabled={!!downloadProgress} style={styles.dlBtn} title="全てのカード画像をダウンロードしてキャッシュします">
+          {downloadProgress ? `DL中: ${Math.floor((downloadProgress.current / downloadProgress.total) * 100)}%` : <><span>📥</span> 画像一括DL</>}
         </button>
       </div>
 
-      {/* Main Content Area (Auto Scaled) */}
       <div style={styles.scaleWrapper}>
         <div ref={contentRef} style={styles.scaledContent}>
           <div style={styles.title}>OPCG SIM</div>
 
-          {/* Section 1: デッキ管理 */}
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Deck & Cards</div>
             <div style={styles.grid}>
-              <MenuCard 
-                label="デッキ作成 / 一覧" 
-                desc="Deck Builder" 
-                onClick={onDeckBuilder} 
-                color="#3498db" 
-              />
-              <MenuCard 
-                label="カードリスト" 
-                desc="Card Catalog" 
-                onClick={onCardList} 
-                color="#e67e22" 
-              />
+              <MenuCard label="デッキ作成 / 一覧" desc="Deck Builder" onClick={onDeckBuilder} color="#3498db" />
+              <MenuCard label="カードリスト" desc="Card Catalog" onClick={onCardList} color="#e67e22" />
             </div>
           </div>
 
-          {/* Section 2: シミュレーション */}
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Simulation</div>
             <div style={styles.grid}>
-              {/* ▼ 変更: モーダルを開かずに直接開始 */}
-              <MenuCard 
-                label="1人回しモード" 
-                desc="Solo Sandbox Mode" 
-                onClick={() => onStart(p1Deck, p2Deck, 'sandbox', { role: 'both' })} 
-                color="#2ecc71" 
-              />
-              <MenuCard 
-                label="対戦モード" 
-                desc="Online Multiplayer" 
-                onClick={onLobby} 
-                color="#9b59b6" 
-              />
-              <MenuCard 
-                label="自動モード" 
-                desc="VS CPU (Rule Enforced)" 
-                onClick={() => setActiveModal('cpu')} 
-                color="#e74c3c" 
-              />
+              <MenuCard label="1人回しモード" desc="Solo Sandbox Mode" onClick={() => setActiveModal('solo')} color="#2ecc71" />
+              {/* ▼ 変更: ロビー直接遷移ではなく、マルチプレイメニューを開く */}
+              <MenuCard label="対戦モード" desc="Online Multiplayer" onClick={() => setActiveModal('multi')} color="#9b59b6" />
+              <MenuCard label="自動モード" desc="VS CPU (Rule Enforced)" onClick={() => setActiveModal('cpu')} color="#e74c3c" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Modals */}
-      {/* Solo用のモーダルは削除済み */}
+      {activeModal === 'solo' && (
+        <SetupModal title="Solo Sandbox Setup" onConfirm={() => onStart(p1Deck, p2Deck, 'sandbox', { role: 'both' })} />
+      )}
       
       {activeModal === 'cpu' && (
-        <SetupModal 
-          title="VS CPU Setup" 
-          onConfirm={() => onStart(p1Deck, p2Deck, 'normal')} 
-        />
+        <SetupModal title="VS CPU Setup" onConfirm={() => onStart(p1Deck, p2Deck, 'normal')} />
+      )}
+
+      {/* ▼ 追加: オンライン対戦用モーダル */}
+      {activeModal === 'multi' && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalPanel}>
+            <div style={styles.modalTitle}>Online Multiplayer</div>
+            
+            {/* Create Room */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '15px', borderRadius: '8px' }}>
+              <label style={{ display: 'block', color: '#bdc3c7', fontSize: '12px', marginBottom: '5px', fontWeight: 'bold' }}>新規ルーム作成</label>
+              <input 
+                type="text" 
+                value={roomName}
+                onChange={(e) => setRoomName(e.target.value)}
+                placeholder="部屋名を入力"
+                style={{ ...styles.select, marginTop: 0 }} 
+              />
+              <div style={{ marginTop: '10px' }}>
+                <label style={{ display: 'block', color: '#bdc3c7', fontSize: '10px', marginBottom: '3px' }}>使用デッキ</label>
+                <select value={p1Deck} onChange={(e) => setP1Deck(e.target.value)} style={{ ...styles.select, marginTop: 0 }}>
+                  {deckOptions.map(opt => <option key={`p1-${opt.id}`} value={opt.id}>{opt.name}</option>)}
+                </select>
+              </div>
+              <button 
+                onClick={() => onStart(p1Deck, 'nami.json', 'sandbox', { role: 'p1', room_name: roomName })}
+                disabled={!roomName.trim()}
+                style={{ ...styles.actionBtn(true), width: '100%', marginTop: '15px', opacity: roomName.trim() ? 1 : 0.5 }}
+              >
+                部屋を作成して開始
+              </button>
+            </div>
+
+            <div style={{ textAlign: 'center', color: '#95a5a6', fontSize: '12px', margin: '-10px 0' }}>- OR -</div>
+
+            {/* Join Room */}
+            <button onClick={onLobby} style={styles.actionBtn(false)}>
+              ロビーで部屋を探す
+            </button>
+
+            <button onClick={() => setActiveModal('none')} style={{ background: 'none', border: 'none', color: '#7f8c8d', marginTop: '10px', cursor: 'pointer', textDecoration: 'underline' }}>
+              キャンセル
+            </button>
+          </div>
+        </div>
       )}
 
       <style>{`
