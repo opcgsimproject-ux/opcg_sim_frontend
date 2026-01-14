@@ -16,7 +16,6 @@ interface GameStartProps {
 }
 
 const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardList, onLobby }) => {
-  // ▼ 変更: デッキ選択関連のstateを削除
   const [activeModal, setActiveModal] = useState<'none' | 'multi'>('none');
   const [downloadProgress, setDownloadProgress] = useState<{current: number, total: number} | null>(null);
   const [roomName, setRoomName] = useState('');
@@ -48,8 +47,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       }
     }
   }, [windowSize, isMobile]);
-
-  // ▼ 変更: デッキ一覧取得処理(useEffect)を削除
 
   const handleCacheImages = async () => {
     if (!confirm("全てのカード画像をダウンロードしますか？\n(初回のみ通信量が発生します。Wi-Fi推奨)")) return;
@@ -141,9 +138,11 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       color: '#f1c40f', fontSize: '24px', fontWeight: 'bold', textAlign: 'center' as const,
       borderBottom: '1px solid #7f8c8d', paddingBottom: '10px', marginBottom: '10px'
     },
+    // ▼ 変更: boxSizingを追加して幅のはみ出しを防止
     select: {
       width: '100%', padding: '12px', background: '#2a1a1a', color: '#f0e6d2',
-      border: '1px solid #5d4037', borderRadius: '4px', fontSize: '16px', marginTop: '5px'
+      border: '1px solid #5d4037', borderRadius: '4px', fontSize: '16px', marginTop: '5px',
+      boxSizing: 'border-box' as const 
     },
     actionBtn: (primary: boolean) => ({
       flex: 1, padding: '12px', borderRadius: '4px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer',
@@ -216,13 +215,11 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
         </div>
       </div>
 
-      {/* ▼ 変更: SetupModalを削除し、対戦用モーダルのみ簡略化して配置 */}
       {activeModal === 'multi' && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalPanel}>
             <div style={styles.modalTitle}>Online Multiplayer</div>
             
-            {/* Create Room */}
             <div style={{ background: 'rgba(0,0,0,0.2)', padding: '15px', borderRadius: '8px' }}>
               <label style={{ display: 'block', color: '#bdc3c7', fontSize: '12px', marginBottom: '5px', fontWeight: 'bold' }}>新規ルーム作成</label>
               <input 
@@ -233,14 +230,12 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
                 style={{ ...styles.select, marginTop: 0 }} 
                 autoFocus
                 onKeyDown={(e) => {
-                    // Enterキーで部屋作成
                     if (e.key === 'Enter' && roomName.trim()) {
                         onStart('', '', 'sandbox', { role: 'p1', room_name: roomName });
                     }
                 }}
               />
               <button 
-                // ▼ 変更: デッキIDは空文字で開始（SandboxGame側で選択）
                 onClick={() => onStart('', '', 'sandbox', { role: 'p1', room_name: roomName })}
                 disabled={!roomName.trim()}
                 style={{ ...styles.actionBtn(true), width: '100%', marginTop: '15px', opacity: roomName.trim() ? 1 : 0.5 }}
@@ -251,7 +246,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
 
             <div style={{ textAlign: 'center', color: '#95a5a6', fontSize: '12px', margin: '-10px 0' }}>- OR -</div>
 
-            {/* Join Room */}
             <button onClick={onLobby} style={styles.actionBtn(false)}>
               ロビーで部屋を探す
             </button>

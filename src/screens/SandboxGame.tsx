@@ -61,6 +61,10 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
   const [layoutCoords, setLayoutCoords] = useState<{ x: number, y: number } | null>(null);
   const [dropChoice, setDropChoice] = useState<{ card: CardInstance, destPid: string, destZone: string } | null>(null);
   const [selectedCard, setSelectedCard] = useState<CardInstance | null>(null);
+  
+  // ▼ 追加: ローカルでのデッキ選択状態管理 (表示用)
+  const [localSelectedDecks, setLocalSelectedDecks] = useState<{ [key: string]: string }>({ p1: '', p2: '' });
+
   const inspectScrollXRef = useRef(20);
   const { COLORS } = LAYOUT_CONSTANTS;
 
@@ -126,6 +130,12 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       }
       pressStartPosRef.current = null;
   };
+
+  useEffect(() => {
+    const handleResize = () => {};
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const fetchDecks = async () => {
@@ -194,8 +204,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    // ▼ 修正: 対戦相手の操作等でサーバーから状態更新が来た場合のみ反映する
-                    // (自分の操作時はローカル更新が先行しているため、整合性が取れていれば上書きされても問題ない)
                     if (data.type === 'STATE_UPDATE') setGameState(data.state);
                 } catch(e) { logger.error('ws.parse_error', String(e)); }
             };
@@ -443,11 +451,9 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       if (!isLocalMode && !activeGameId) return;
       setIsPending(true);
       try { 
-          // ▼ 変更: 対戦モードでもローカルロジックを使って状態計算を行う
           let localParams = { ...params };
           const pid = myPlayerId === 'both' ? (params.player_id || 'p1') : myPlayerId;
 
-          // STARTアクション時のデッキデータ準備 (オンラインでもローカルでデータを用意する)
           if (type === 'START') {
               const p1DeckId = gameState.players.p1.name;
               const p2DeckId = gameState.players.p2.name;
@@ -469,17 +475,16 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
               localParams.p1Deck = d1; localParams.p2Deck = d2;
           }
 
-          // 1. ローカルで状態更新 (即時反映)
           const newState = handleLocalAction(gameState, type, { ...localParams, player_id: pid });
           setGameState(newState);
 
-          // 2. 対戦モードならサーバーへアクションを通知 (同期用)
           if (!isLocalMode) {
               await apiClient.sendSandboxAction(activeGameId!, { action_type: type, player_id: pid, ...params }); 
-              // サーバーからのレスポンス(res.state)は無視し、WebSocketからの更新を待つ
           }
       } catch(e) { console.error(e); alert('アクションエラー'); } finally { setIsPending(false); }
   };
+
+  const isMobile = window.innerWidth < 768;
 
   if (gameState && gameState.status === 'WAITING') {
     return (
@@ -510,8 +515,13 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <select 
                     style={{ flex: 1, padding: '10px', background: '#2a1a1a', color: '#f0e6d2', border: '1px solid #5d4037', borderRadius: '4px', fontSize: '14px' }} 
-                    value={gameState.players[pid].name}
-                    onChange={(e) => handleAction('SET_DECK', { player_id: pid, deck_id: e.target.value })}
+                    // ▼ 変更: ローカルステートをバインドして即時反映させる
+                    value={localSelectedDecks[pid]}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setLocalSelectedDecks(prev => ({ ...prev, [pid]: val }));
+                      handleAction('SET_DECK', { player_id: pid, deck_id: val });
+                    }}
                   >
                     <option value="">デッキを選択...</option>
                     {deckOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
@@ -561,6 +571,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     );
   }
 
+  // ... (以降は変更なし) ...
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', background: '#000' }}>
       <div ref={pixiContainerRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: inspecting ? 200 : 1 }} />
