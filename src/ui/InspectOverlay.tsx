@@ -32,7 +32,6 @@ export const createInspectOverlay = (
   onMoveToTrash: (uuid: string) => void,
   onScrollCallback: (x: number) => void,
   onShuffle?: () => void,
-  // ▼ 追加: 指定枚数公開用のコールバック
   onRevealTop?: (count: number) => void 
 ): InspectOverlayContainer => {
   const container = new PIXI.Container() as InspectOverlayContainer;
@@ -48,13 +47,20 @@ export const createInspectOverlay = (
 
   // --- レイアウト定数 ---
   const PADDING = 20;
-  // ▼ 変更: ヘッダーエリアを拡張 (ボタン行を追加するため)
   const HEADER_HEIGHT = 130; 
   const SCROLL_ZONE_HEIGHT = 70;
+  
+  // ▼ 変更: コンテンツ（カード+ボタン）の必要高さを計算
+  // カード高さ(約167px) + ボタン群(約130px) + 余白
+  const MIN_CONTENT_HEIGHT = BASE_CARD_HEIGHT + 150; 
+  const REQUIRED_PANEL_H = HEADER_HEIGHT + SCROLL_ZONE_HEIGHT + MIN_CONTENT_HEIGHT;
+  
+  // ▼ 変更: 画面高さを上限(90%)としつつ、必要な高さを確保する
+  const PANEL_H = Math.min(H * 0.95, Math.max(REQUIRED_PANEL_H, 500));
+  
   const PANEL_W = Math.min(W * 0.95, 1200);
   const PANEL_X = (W - PANEL_W) / 2;
-  const PANEL_Y = 15;
-  const PANEL_H = Math.min(H * 0.48, 450); 
+  const PANEL_Y = (H - PANEL_H) / 2; // 画面中央に配置
 
   const CARD_AREA_Y = HEADER_HEIGHT + PADDING;
   const LIST_H = PANEL_H - HEADER_HEIGHT - SCROLL_ZONE_HEIGHT;
@@ -269,6 +275,8 @@ export const createInspectOverlay = (
   scrollZone.on('pointerupoutside', () => { isScrolling = false; });
 
   container.updateScroll = (x: number) => { currentScrollX = x; container.updateLayout(null, null); updateScrollBar(); };
+  
+  // ▼ 変更: レイアウト更新ロジックでカードのY位置を固定
   container.updateLayout = (draggingGlobalX: number | null, draggingUuid: string | null) => {
     let gapIndex = -1;
     const listStartX = PANEL_X + container.x;
@@ -292,7 +300,11 @@ export const createInspectOverlay = (
       }
       const X_OFFSET = TOTAL_CARD_WIDTH / 2 + 20;
       const targetX = visualIndex * TOTAL_CARD_WIDTH + X_OFFSET - currentScrollX;
-      sprite.position.set(targetX, LIST_H / 2);
+      
+      // ▼ 変更: カード配置を「垂直中央」ではなく「上詰め」にする
+      // ボタンが下に伸びるため、カード中心をリストエリアの上の方に置く
+      const targetY = BASE_CARD_HEIGHT / 2 + 20; 
+      sprite.position.set(targetX, targetY);
     });
   };
   container.updateScroll(initialScrollX);
