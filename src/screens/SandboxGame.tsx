@@ -48,6 +48,12 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
+interface DeckOption {
+  id: string;
+  name: string;
+  leaderId?: string;
+}
+
 interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
 
 export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomName, onBack }: SandboxGameProps) => {
@@ -76,6 +82,11 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
   const longPressTimerRef = useRef<any>(null);
   const pressStartPosRef = useRef<{x: number, y: number} | null>(null);
+  
+  // ▼ 追加: ドラッグ開始待ちの状態管理（タップ判定用）
+  const pendingDragRef = useRef<{ card: CardInstance, x: number, y: number } | null>(null);
+  // ▼ 追加: 長押しが成立したかどうかのフラグ
+  const longPressTriggeredRef = useRef(false);
 
   const dragStateRef = useRef(dragState);
   useEffect(() => { dragStateRef.current = dragState; }, [dragState]);
@@ -122,9 +133,12 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
       pressStartPosRef.current = { x, y };
       longPressTimerRef.current = setTimeout(() => {
+          // 長押し成立時の処理
           logger.log({ level: 'info', action: 'ui.long_press', msg: `Show detail: ${card.name}`, payload: { uuid: card.uuid } });
           setSelectedCard(card);
+          // ドラッグ状態をキャンセルし、フラグを立てる
           setDragState(null);
+          longPressTriggeredRef.current = true;
           longPressTimerRef.current = null;
       }, 500);
   };
@@ -269,6 +283,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     bg.beginFill(COLORS.PLAYER_BG).drawRect(0, midY, W, H - midY).endFill();
     app.stage.addChild(bg);
     
+    // startDrag: 実際にドラッグが確定したときに呼ばれる
     const startDrag = (card: CardInstance, startPoint: { x: number, y: number }) => {
         const ghost = createCardContainer(card, coords.CW, coords.CH, { onClick: () => {}, isOpponent: false });
         ghost.position.set(startPoint.x, startPoint.y); ghost.alpha = 0.8; ghost.scale.set(1.1);
@@ -278,11 +293,18 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
 
     const onCardDown = (e: PIXI.FederatedPointerEvent, card: CardInstance) => {
         if (isPending || dragState || isActionBlockedByMulligan) return;
-        if ((card.type || '').toUpperCase() === 'LEADER') { handleAction('TOGGLE_REST', { card_uuid: card.uuid }); return; }
+        
+        // 所有権チェック
         if (myPlayerId !== 'both' && gameState) { const me = gameState.players[myPlayerId as 'p1' | 'p2']; if (me && card.owner_id && card.owner_id !== me.name) return; }
         
+        // 長押しフラグをリセット
+        longPressTriggeredRef.current = false;
+        
+        // 長押しタイマー開始
         startLongPress(card, e.global.x, e.global.y);
-        startDrag(card, { x: e.global.x, y: e.global.y });
+        
+        // ▼ 変更: すぐにドラッグを開始せず、待機状態にする
+        pendingDragRef.current = { card, x: e.global.x, y: e.global.y };
     };
 
     const bottomPlayer = isRotated ? gameState.players.p2 : gameState.players.p1;
@@ -326,10 +348,23 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     if (!app) return;
     
     const onPointerMove = (e: PointerEvent) => { 
+        // 長押しキャンセル判定
         if (pressStartPosRef.current) {
             const dx = e.clientX - pressStartPosRef.current.x;
             const dy = e.clientY - pressStartPosRef.current.y;
             if (Math.sqrt(dx * dx + dy * dy) > 10) cancelLongPress();
+        }
+
+        // ▼ 追加: ドラッグ開始判定 (一定距離動いたら開始)
+        if (pendingDragRef.current && !dragState) {
+             const dx = e.clientX - pendingDragRef.current.x;
+             const dy = e.clientY - pendingDragRef.current.y;
+             if (Math.sqrt(dx * dx + dy * dy) > 10) {
+                 // 閾値を超えたらドラッグ開始
+                 startDrag(pendingDragRef.current.card, { x: pendingDragRef.current.x, y: pendingDragRef.current.y });
+                 pendingDragRef.current = null; // 待機状態解除
+                 cancelLongPress(); // ドラッグしたら長押し詳細表示はキャンセル
+             }
         }
 
         if (!dragState || (dragState.card.type || '').toUpperCase() === 'LEADER') return; 
@@ -339,12 +374,138 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     
     const onPointerUp = async (e: PointerEvent) => {
         cancelLongPress();
-        if (!dragState) return;
-        const card = dragState.card; const endPos = { x: e.clientX, y: e.clientY };
-        if ((card.type || '').toUpperCase() === 'LEADER') { setDragState(null); return; }
-        const distFromStart = Math.sqrt(Math.pow(endPos.x - dragState.startPos.x, 2) + Math.pow(endPos.y - dragState.startPos.y, 2));
+        
+        // --- ケース1: ドラッグ中だった場合 (ドロップ処理) ---
+        if (dragState) {
+            const card = dragState.card; const endPos = { x: e.clientX, y: e.clientY };
+            if ((card.type || '').toUpperCase() === 'LEADER') { setDragState(null); return; }
+            
+            // ... (既存のドロップ判定ロジック) ...
+            const distFromStart = Math.sqrt(Math.pow(endPos.x - dragState.startPos.x, 2) + Math.pow(endPos.y - dragState.startPos.y, 2));
 
-        if (distFromStart < 10) {
+            // オーバーレイ内でのドロップ判定などはここに...
+            // (ここでは既存のロジックをそのまま流用します)
+            if (inspecting && overlayRef.current) {
+                 // ... Inspect Overlay Drop Logic ...
+                 // 簡略化のため、既存コードと同じ処理
+                 const { width: W, height: H } = app.screen;
+                 const PANEL_W = Math.min(W * 0.95, 1200);
+                 const PANEL_X = (W - PANEL_W) / 2;
+                 const PANEL_Y = 15; 
+                 const PANEL_H = Math.min(H * 0.48, 450);
+                 const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= PANEL_Y + PANEL_H;
+                 if (inspecting.pid === ((endPos.y < H/2) ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1'))) {
+                     if (isInsidePanel) {
+                         const HEADER_HEIGHT = 40;
+                         const SCROLL_ZONE_HEIGHT = 70;
+                         if (endPos.y > PANEL_Y + HEADER_HEIGHT && endPos.y < PANEL_Y + PANEL_H - SCROLL_ZONE_HEIGHT) {
+                             const DISPLAY_CARD_WIDTH = 55; 
+                             const CARD_GAP = 10;
+                             const TOTAL_CARD_WIDTH = DISPLAY_CARD_WIDTH + CARD_GAP;
+                             const relativeX = endPos.x + inspectScrollXRef.current - PANEL_X;
+                             let newIndex = Math.floor(relativeX / TOTAL_CARD_WIDTH);
+                             newIndex = Math.max(0, newIndex);
+                             handleAction('MOVE_CARD', { card_uuid: card.uuid, dest_player_id: inspecting.pid, dest_zone: inspecting.type, index: newIndex });
+                         }
+                         setDragState(null);
+                         return;
+                     }
+                 }
+            }
+
+            // ゾーン判定
+            const { width: W, height: H } = app.screen; const coords = calculateCoordinates(W, H); const midY = H / 2;
+            const isTopArea = endPos.y < midY; let destPid = isTopArea ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1');
+            
+            if (myPlayerId !== 'both' && destPid !== myPlayerId) { setDragState(null); return; }
+
+            const checkDist = (tx: number, ty: number) => Math.sqrt(Math.pow(tx - endPos.x, 2) + Math.pow(ty - endPos.y, 2));
+            const THRESHOLD = coords.CH; 
+            const checkZone = (isTopSide: boolean) => {
+                const getX = (val: number) => isTopSide ? W - val : val;
+                const yBase = isTopSide ? 0 : midY;
+                const r2Y = isTopSide ? coords.midY - coords.getY(2) - coords.CH/2 : yBase + coords.getY(2) + coords.CH/2;
+                const r3Y = isTopSide ? coords.midY - coords.getY(3) - coords.CH/2 : yBase + coords.getY(3) + coords.CH/2;
+                const r4Y = isTopSide ? coords.midY - coords.getY(4) - coords.CH/2 : yBase + coords.getY(4) + coords.CH/2;
+                if (checkDist(getX(coords.getLeaderX(W)), r2Y) < THRESHOLD) return 'leader';
+                if (checkDist(getX(coords.getStageX(W)), r2Y) < THRESHOLD) return 'stage';
+                if (checkDist(getX(coords.getLifeX(W)), r2Y) < THRESHOLD) return 'life';
+                if (checkDist(getX(coords.getTrashX(W)), r3Y) < THRESHOLD) return 'trash';
+                if (checkDist(getX(coords.getDeckX(W)), r2Y) < THRESHOLD) return 'deck';
+                if (Math.abs(r4Y - endPos.y) < coords.CH) return 'hand';
+                if (checkDist(getX(coords.getDonDeckX(W)), r3Y) < THRESHOLD) return 'don_deck';
+                if (checkDist(getX(coords.getDonActiveX(W)), r3Y) < THRESHOLD) return 'don_active';
+                if (checkDist(getX(coords.getDonRestX(W)), r3Y) < THRESHOLD) return 'don_rested';
+                return null;
+            };
+
+            // ドン付与チェック
+            if (card.card_id === "DON" || card.type === "DON") {
+                const targetPlayer = destPid === 'p1' ? gameState?.players.p1 : gameState?.players.p2;
+                if (targetPlayer) {
+                    const getX = (val: number) => isTopArea ? W - val : val;
+                    const yBase = isTopArea ? 0 : midY; const leaderY = isTopArea ? (midY - coords.getY(2) - coords.CH/2) : (yBase + coords.getY(2) + coords.CH/2);
+                    if (targetPlayer.leader && Math.abs(endPos.x - getX(coords.getLeaderX(W))) < THRESHOLD && Math.abs(endPos.y - leaderY) < THRESHOLD) { handleAction('ATTACH_DON', { card_uuid: card.uuid, target_uuid: targetPlayer.leader.uuid }); setDragState(null); return; }
+                    const fieldY = isTopArea ? (midY - coords.getY(1) - coords.CH/2) : (yBase + coords.getY(1) + coords.CH/2);
+                    const fieldCards = targetPlayer.zones.field;
+                    for (let i = 0; i < fieldCards.length; i++) { 
+                        const cx = getX(coords.getFieldX(i, W, coords.CW, fieldCards.length));
+                        if (Math.abs(endPos.x - cx) < THRESHOLD && Math.abs(endPos.y - fieldY) < THRESHOLD) { handleAction('ATTACH_DON', { card_uuid: card.uuid, target_uuid: fieldCards[i].uuid }); setDragState(null); return; } 
+                    }
+                }
+                const dZone = checkZone(isTopArea); if (dZone && ['don_active', 'don_rested', 'don_deck'].includes(dZone)) handleAction('MOVE_CARD', { card_uuid: card.uuid, dest_player_id: destPid, dest_zone: dZone });
+                setDragState(null); return;
+            }
+
+            const detectedZone = checkZone(isTopArea);
+            
+            if (detectedZone === 'deck' || detectedZone === 'life') { 
+                setDropChoice({ card, destPid, destZone: detectedZone }); 
+                setDragState(null); 
+                return; 
+            } 
+            
+            const destZone = detectedZone || 'field';
+            
+            if (destZone === 'field') {
+                const destP = destPid === 'p1' ? gameState?.players.p1 : gameState?.players.p2;
+                if (destP && destP.zones.field.length >= 5) {
+                    const isAlreadyOnField = destP.zones.field.some(c => c.uuid === card.uuid);
+                    if (!isAlreadyOnField) {
+                        setReplacementState({ card, destPid });
+                        setDragState(null);
+                        return;
+                    }
+                }
+            }
+
+            const animateAndSend = () => {
+                const tx = endPos.x; const ty = endPos.y; const sprite = dragState.sprite;
+                const step = () => {
+                    const dx = tx - sprite.x; const dy = ty - sprite.y;
+                    if (Math.sqrt(dx*dx + dy*dy) < 5) { app.ticker.remove(step); handleAction('MOVE_CARD', { card_uuid: card.uuid, dest_player_id: destPid, dest_zone: destZone }); setDragState(null); } else { sprite.x += dx * 0.3; sprite.y += dy * 0.3; }
+                };
+                app.ticker.add(step);
+            };
+            animateAndSend();
+            return;
+        }
+
+        // --- ケース2: タップ (ドラッグせずに離した) ---
+        if (pendingDragRef.current) {
+            const card = pendingDragRef.current.card;
+            pendingDragRef.current = null; // 待機状態解除
+
+            // 長押し成功済みの場合はタップ処理をしない
+            if (longPressTriggeredRef.current) return;
+
+            // リーダーのレスト切り替え
+            if ((card.type || '').toUpperCase() === 'LEADER') { 
+                handleAction('TOGGLE_REST', { card_uuid: card.uuid }); 
+                return; 
+            }
+
+            // Inspectモードでの選択
             if (inspecting) {
                 if (inspectingCards.some(c => c.uuid === card.uuid)) {
                     const newSet = new Set(revealedCardIds);
@@ -352,123 +513,41 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                     else newSet.add(card.uuid);
                     setRevealedCardIds(newSet);
                 }
-                setDragState(null); 
                 return;
             }
-        }
 
-        const { width: W, height: H } = app.screen; const coords = calculateCoordinates(W, H); const midY = H / 2;
-        const isTopArea = endPos.y < midY; let destPid = isTopArea ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1');
-        if (myPlayerId !== 'both' && destPid !== myPlayerId) { setDragState(null); return; }
+            // 通常のカード操作 (デッキ/ライフ/トラッシュ確認 or レスト切替)
+            const { width: W, height: H } = app.screen; const midY = H / 2;
+            const isTopArea = e.clientY < midY; 
+            let destPid = isTopArea ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1');
+            
+            // 相手エリアのカードは操作しない (閲覧のみ)
+            if (myPlayerId !== 'both' && destPid !== myPlayerId) return;
 
-        if (inspecting && overlayRef.current && inspecting.pid === destPid) {
-             const PANEL_W = Math.min(W * 0.95, 1200);
-             const PANEL_X = (W - PANEL_W) / 2;
-             const PANEL_Y = 15; 
-             const PANEL_H = Math.min(H * 0.48, 450);
-             const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= PANEL_Y + PANEL_H;
-             if (isInsidePanel) {
-                 const HEADER_HEIGHT = 40;
-                 const SCROLL_ZONE_HEIGHT = 70;
-                 if (endPos.y > PANEL_Y + HEADER_HEIGHT && endPos.y < PANEL_Y + PANEL_H - SCROLL_ZONE_HEIGHT) {
-                     const DISPLAY_CARD_WIDTH = 55; 
-                     const CARD_GAP = 10;
-                     const TOTAL_CARD_WIDTH = DISPLAY_CARD_WIDTH + CARD_GAP;
-                     const listStartX = PANEL_X; 
-                     const relativeX = endPos.x + inspectScrollXRef.current - listStartX;
-                     let newIndex = Math.floor(relativeX / TOTAL_CARD_WIDTH);
-                     newIndex = Math.max(0, newIndex);
-                     handleAction('MOVE_CARD', { card_uuid: card.uuid, dest_player_id: inspecting.pid, dest_zone: inspecting.type, index: newIndex });
-                 }
-                 setDragState(null);
-                 return;
-             }
-        }
-
-        if (distFromStart < 10) {
             const destP = destPid === 'p1' ? gameState?.players.p1 : gameState?.players.p2;
+            
+            // デッキ/ライフ/トラッシュのクリック判定
             const findInStack = (p: any) => { if (p.zones.deck?.some((c: any) => c.uuid === card.uuid)) return { type: 'deck' }; if (p.zones.life?.some((c: any) => c.uuid === card.uuid)) return { type: 'life' }; if (p.zones.trash?.some((c: any) => c.uuid === card.uuid)) return { type: 'trash' }; return null; };
-            if (destP) { const stackInfo = findInStack(destP); if (stackInfo) { inspectScrollXRef.current = 20; setInspecting({ type: stackInfo.type as any, pid: destPid }); setRevealedCardIds(new Set()); setDragState(null); return; } }
-            if (!destP?.zones.hand.some(c => c.uuid === card.uuid)) handleAction('TOGGLE_REST', { card_uuid: card.uuid });
-            setDragState(null); return;
-        }
-
-        let destZone = 'field'; 
-        const checkDist = (tx: number, ty: number) => Math.sqrt(Math.pow(tx - endPos.x, 2) + Math.pow(ty - endPos.y, 2));
-        const THRESHOLD = coords.CH; 
-        const checkZone = (isTopSide: boolean) => {
-            const getX = (val: number) => isTopSide ? W - val : val;
-            const yBase = isTopSide ? 0 : midY;
-            const r2Y = isTopSide ? coords.midY - coords.getY(2) - coords.CH/2 : yBase + coords.getY(2) + coords.CH/2;
-            const r3Y = isTopSide ? coords.midY - coords.getY(3) - coords.CH/2 : yBase + coords.getY(3) + coords.CH/2;
-            const r4Y = isTopSide ? coords.midY - coords.getY(4) - coords.CH/2 : yBase + coords.getY(4) + coords.CH/2;
-            if (checkDist(getX(coords.getLeaderX(W)), r2Y) < THRESHOLD) return 'leader';
-            if (checkDist(getX(coords.getStageX(W)), r2Y) < THRESHOLD) return 'stage';
-            if (checkDist(getX(coords.getLifeX(W)), r2Y) < THRESHOLD) return 'life';
-            if (checkDist(getX(coords.getTrashX(W)), r3Y) < THRESHOLD) return 'trash';
-            if (checkDist(getX(coords.getDeckX(W)), r2Y) < THRESHOLD) return 'deck';
-            if (Math.abs(r4Y - endPos.y) < coords.CH) return 'hand';
-            if (checkDist(getX(coords.getDonDeckX(W)), r3Y) < THRESHOLD) return 'don_deck';
-            if (checkDist(getX(coords.getDonActiveX(W)), r3Y) < THRESHOLD) return 'don_active';
-            if (checkDist(getX(coords.getDonRestX(W)), r3Y) < THRESHOLD) return 'don_rested';
-            return null;
-        };
-
-        if (card.card_id === "DON" || card.type === "DON") {
-            const targetPlayer = destPid === 'p1' ? gameState?.players.p1 : gameState?.players.p2;
-            if (targetPlayer) {
-                const getX = (val: number) => isTopArea ? W - val : val;
-                const yBase = isTopArea ? 0 : midY; const leaderY = isTopArea ? (midY - coords.getY(2) - coords.CH/2) : (yBase + coords.getY(2) + coords.CH/2);
-                if (targetPlayer.leader && Math.abs(endPos.x - getX(coords.getLeaderX(W))) < THRESHOLD && Math.abs(endPos.y - leaderY) < THRESHOLD) { handleAction('ATTACH_DON', { card_uuid: card.uuid, target_uuid: targetPlayer.leader.uuid }); setDragState(null); return; }
-                const fieldY = isTopArea ? (midY - coords.getY(1) - coords.CH/2) : (yBase + coords.getY(1) + coords.CH/2);
-                const fieldCards = targetPlayer.zones.field;
-                for (let i = 0; i < fieldCards.length; i++) { 
-                    const cx = getX(coords.getFieldX(i, W, coords.CW, fieldCards.length));
-                    if (Math.abs(endPos.x - cx) < THRESHOLD && Math.abs(endPos.y - fieldY) < THRESHOLD) { handleAction('ATTACH_DON', { card_uuid: card.uuid, target_uuid: fieldCards[i].uuid }); setDragState(null); return; } 
-                }
+            if (destP) { 
+                const stackInfo = findInStack(destP); 
+                if (stackInfo) { 
+                    inspectScrollXRef.current = 20; 
+                    setInspecting({ type: stackInfo.type as any, pid: destPid }); 
+                    setRevealedCardIds(new Set()); 
+                    return; 
+                } 
             }
-            const dZone = checkZone(isTopArea); if (dZone && ['don_active', 'don_rested', 'don_deck'].includes(dZone)) handleAction('MOVE_CARD', { card_uuid: card.uuid, dest_player_id: destPid, dest_zone: dZone });
-            setDragState(null); return;
-        }
-        
-        const detectedZone = checkZone(isTopArea);
-        
-        if (detectedZone === 'deck' || detectedZone === 'life') { 
-            setDropChoice({ card, destPid, destZone: detectedZone }); 
-            setDragState(null); 
-            return; 
-        } 
-        
-        destZone = detectedZone || 'field';
-        
-        // ▼ 追加: 5枚制限チェック
-        if (destZone === 'field') {
-            const destP = destPid === 'p1' ? gameState?.players.p1 : gameState?.players.p2;
-            if (destP && destP.zones.field.length >= 5) {
-                const isAlreadyOnField = destP.zones.field.some(c => c.uuid === card.uuid);
-                if (!isAlreadyOnField) {
-                    setReplacementState({ card, destPid });
-                    setDragState(null);
-                    return;
-                }
+
+            // レスト切り替え (手札以外)
+            if (destP && !destP.zones.hand.some(c => c.uuid === card.uuid)) {
+                 handleAction('TOGGLE_REST', { card_uuid: card.uuid });
             }
         }
-
-        const animateAndSend = () => {
-            const tx = endPos.x; const ty = endPos.y; const sprite = dragState.sprite;
-            const step = () => {
-                const dx = tx - sprite.x; const dy = ty - sprite.y;
-                if (Math.sqrt(dx*dx + dy*dy) < 5) { app.ticker.remove(step); handleAction('MOVE_CARD', { card_uuid: card.uuid, dest_player_id: destPid, dest_zone: destZone }); setDragState(null); } else { sprite.x += dx * 0.3; sprite.y += dy * 0.3; }
-            };
-            app.ticker.add(step);
-        };
-        animateAndSend();
     };
     window.addEventListener('pointermove', onPointerMove); window.addEventListener('pointerup', onPointerUp);
     return () => { window.removeEventListener('pointermove', onPointerMove); window.removeEventListener('pointerup', onPointerUp); };
   }, [dragState, gameState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan]);
 
-  // ▼ 変更: ローカル計算で連続更新するように修正
   const handleReplacement = async (trashCardUuids: string[]) => {
     if (!replacementState || trashCardUuids.length === 0 || !gameState) return;
     const { card, destPid } = replacementState;
