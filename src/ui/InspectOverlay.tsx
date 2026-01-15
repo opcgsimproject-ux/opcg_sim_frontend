@@ -56,20 +56,15 @@ export const createInspectOverlay = (
   
   // 必要高さの計算
   const REQUIRED_LIST_H = 310;
-  
-  // ▼ 変更: 画面上部に配置し、自分の盤面(下部)を空ける計算に変更
   const PANEL_Y = 40; // 上端からのマージン
-  const PLAYER_AREA_RESERVE = Math.max(250, H * 0.4); // 下部に最低限残したいスペース（手札など用）
-  const MAX_PANEL_H = H - PANEL_Y - PLAYER_AREA_RESERVE; // パネルに使える最大高さ
+  const PLAYER_AREA_RESERVE = Math.max(250, H * 0.4); 
+  const MAX_PANEL_H = H - PANEL_Y - PLAYER_AREA_RESERVE;
 
-  // 必要な高さを確保しつつ、最大高さを超えないように調整
-  // (ただし最低限 450px は確保して操作不能になるのを防ぐ)
   const CALCULATED_REQUIRED_H = HEADER_HEIGHT + SCROLL_ZONE_HEIGHT + REQUIRED_LIST_H;
   const PANEL_H = Math.max(450, Math.min(MAX_PANEL_H, CALCULATED_REQUIRED_H));
   
   const PANEL_W = Math.min(W * 0.95, 1200);
   const PANEL_X = (W - PANEL_W) / 2;
-  // PANEL_Y は上で定義済み (上部固定)
 
   const CARD_AREA_Y = HEADER_HEIGHT;
   const LIST_H = PANEL_H - HEADER_HEIGHT - SCROLL_ZONE_HEIGHT;
@@ -226,9 +221,10 @@ export const createInspectOverlay = (
       onCardDown(card, { x: e.global.x, y: e.global.y });
     });
 
-    cardSprite.on('pointertap', () => {
-      if (type !== 'trash') onToggleReveal(card.uuid);
-    });
+    // ▼ 削除: 二重反応を防ぐため、ここでの pointertap イベントを削除
+    // cardSprite.on('pointertap', () => {
+    //   if (type !== 'trash') onToggleReveal(card.uuid);
+    // });
 
     listContainer.addChild(cardSprite);
     cardSprites.push({ sprite: cardSprite, card, originalIndex: i });
