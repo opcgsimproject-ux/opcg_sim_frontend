@@ -311,6 +311,14 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           inspecting.type, inspectingCards, revealedCardIds, W, H, inspectScrollXRef.current, 
           () => setInspecting(null), 
           (card, startPos) => onCardDown({ global: startPos } as any, card),
+          // ▼ 復活: タップイベント（表裏切り替え）を渡す
+          (uuid) => { 
+              // 長押し成立後は何もしない
+              if (longPressTriggeredRef.current) return;
+              const newSet = new Set(revealedCardIds); 
+              if (newSet.has(uuid)) newSet.delete(uuid); else newSet.add(uuid); 
+              setRevealedCardIds(newSet); 
+          },
           () => { const newSet = new Set(revealedCardIds); inspectingCards.forEach(c => newSet.add(c.uuid)); setRevealedCardIds(newSet); }, 
           (uuid) => { handleAction('MOVE_CARD', { card_uuid: uuid, dest_player_id: inspecting.pid, dest_zone: inspecting.type, index: -1 }); }, 
           (uuid) => { handleAction('MOVE_CARD', { card_uuid: uuid, dest_player_id: inspecting.pid, dest_zone: 'hand' }); },
@@ -373,16 +381,14 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                  const PANEL_Y = 40; 
                  const PLAYER_AREA_RESERVE = Math.max(250, H * 0.4); 
                  
-                 // ▼ 修正: 未使用変数 MAX_PANEL_H を削除しました
-                 
-                 const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= H - PLAYER_AREA_RESERVE; 
+                 const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= H - PLAYER_AREA_RESERVE;
                  
                  if (inspecting.pid === ((endPos.y < H/2) ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1'))) {
                      if (isInsidePanel) {
-                         const HEADER_HEIGHT = 130; 
+                         const HEADER_HEIGHT = 130;
                          const SCROLL_ZONE_HEIGHT = 50;
                          const listAreaTop = PANEL_Y + HEADER_HEIGHT;
-                         const listAreaBottom = Math.min(H - PLAYER_AREA_RESERVE, 450 + PANEL_Y) - SCROLL_ZONE_HEIGHT; 
+                         const listAreaBottom = Math.min(H - PLAYER_AREA_RESERVE, 450 + PANEL_Y) - SCROLL_ZONE_HEIGHT;
 
                          if (endPos.y > listAreaTop && endPos.y < listAreaBottom) {
                              const DISPLAY_CARD_WIDTH = 55; 
@@ -488,12 +494,15 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             }
 
             if (inspecting) {
+                // ▼ 削除: ここでのトグル処理を削除（InspectOverlay側に任せる）
+                /*
                 if (inspectingCards.some(c => c.uuid === card.uuid)) {
                     const newSet = new Set(revealedCardIds);
                     if (newSet.has(card.uuid)) newSet.delete(card.uuid);
                     else newSet.add(card.uuid);
                     setRevealedCardIds(newSet);
                 }
+                */
                 return;
             }
 
@@ -525,6 +534,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     return () => { window.removeEventListener('pointermove', onPointerMove); window.removeEventListener('pointerup', onPointerUp); };
   }, [dragState, gameState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan, startDrag]);
 
+  // (以下、handleReplacement 等の既存コード)
   const handleReplacement = async (trashCardUuids: string[]) => {
     if (!replacementState || trashCardUuids.length === 0 || !gameState) return;
     const { card, destPid } = replacementState;
