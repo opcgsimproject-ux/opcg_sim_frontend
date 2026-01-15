@@ -311,7 +311,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           inspecting.type, inspectingCards, revealedCardIds, W, H, inspectScrollXRef.current, 
           () => setInspecting(null), 
           (card, startPos) => onCardDown({ global: startPos } as any, card),
-          // ▼ 修正: 削除した引数を渡さないように変更
           () => { const newSet = new Set(revealedCardIds); inspectingCards.forEach(c => newSet.add(c.uuid)); setRevealedCardIds(newSet); }, 
           (uuid) => { handleAction('MOVE_CARD', { card_uuid: uuid, dest_player_id: inspecting.pid, dest_zone: inspecting.type, index: -1 }); }, 
           (uuid) => { handleAction('MOVE_CARD', { card_uuid: uuid, dest_player_id: inspecting.pid, dest_zone: 'hand' }); },
@@ -371,25 +370,20 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                  const { width: W, height: H } = app.screen;
                  const PANEL_W = Math.min(W * 0.95, 1200);
                  const PANEL_X = (W - PANEL_W) / 2;
-                 const PANEL_Y = 40; // パネル位置変更に対応
+                 const PANEL_Y = 40; 
                  const PLAYER_AREA_RESERVE = Math.max(250, H * 0.4); 
-                 const MAX_PANEL_H = H - PANEL_Y - PLAYER_AREA_RESERVE;
                  
-                 // ここで正確な PANEL_H を計算するのは複雑なため、簡易的な判定
-                 // 基本的にパネル内ドロップは「パネルのY座標」と「パネルの高さ」で判定する
+                 // ▼ 修正: 未使用変数 MAX_PANEL_H を削除しました
                  
-                 const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= H - PLAYER_AREA_RESERVE; // 簡易判定
+                 const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= H - PLAYER_AREA_RESERVE; 
                  
                  if (inspecting.pid === ((endPos.y < H/2) ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1'))) {
                      if (isInsidePanel) {
-                         // パネル内のリストエリア判定
-                         const HEADER_HEIGHT = 130;
+                         const HEADER_HEIGHT = 130; 
                          const SCROLL_ZONE_HEIGHT = 50;
                          const listAreaTop = PANEL_Y + HEADER_HEIGHT;
-                         const listAreaBottom = Math.min(H - PLAYER_AREA_RESERVE, 450 + PANEL_Y) - SCROLL_ZONE_HEIGHT; // 概算
+                         const listAreaBottom = Math.min(H - PLAYER_AREA_RESERVE, 450 + PANEL_Y) - SCROLL_ZONE_HEIGHT; 
 
-                         // 厳密な判定はInspectOverlay内部のロジックに依存するため、
-                         // ここでは「パネルの上部ヘッダーより下」かつ「パネルの下部スクロールより上」であればリストへの戻しとみなす
                          if (endPos.y > listAreaTop && endPos.y < listAreaBottom) {
                              const DISPLAY_CARD_WIDTH = 55; 
                              const CARD_GAP = 10;
