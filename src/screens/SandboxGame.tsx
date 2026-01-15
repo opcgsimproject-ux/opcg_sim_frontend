@@ -311,18 +311,13 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           inspecting.type, inspectingCards, revealedCardIds, W, H, inspectScrollXRef.current, 
           () => setInspecting(null), 
           (card, startPos) => onCardDown({ global: startPos } as any, card),
-          (uuid) => { 
-              const newSet = new Set(revealedCardIds); 
-              if (newSet.has(uuid)) newSet.delete(uuid); else newSet.add(uuid); 
-              setRevealedCardIds(newSet); 
-          },
+          // ▼ 修正: 削除した引数を渡さないように変更
           () => { const newSet = new Set(revealedCardIds); inspectingCards.forEach(c => newSet.add(c.uuid)); setRevealedCardIds(newSet); }, 
           (uuid) => { handleAction('MOVE_CARD', { card_uuid: uuid, dest_player_id: inspecting.pid, dest_zone: inspecting.type, index: -1 }); }, 
           (uuid) => { handleAction('MOVE_CARD', { card_uuid: uuid, dest_player_id: inspecting.pid, dest_zone: 'hand' }); },
           (uuid) => { handleAction('MOVE_CARD', { card_uuid: uuid, dest_player_id: inspecting.pid, dest_zone: 'trash' }); },
           (x) => { inspectScrollXRef.current = x; },
           () => handleAction('SHUFFLE', { player_id: inspecting.pid }),
-          // ▼ 追加: 上から指定枚数を公開
           (count) => {
             const newSet = new Set(revealedCardIds);
             inspectingCards.slice(0, count).forEach(c => newSet.add(c.uuid));
@@ -376,14 +371,26 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                  const { width: W, height: H } = app.screen;
                  const PANEL_W = Math.min(W * 0.95, 1200);
                  const PANEL_X = (W - PANEL_W) / 2;
-                 const PANEL_Y = 15; 
-                 const PANEL_H = Math.min(H * 0.48, 450);
-                 const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= PANEL_Y + PANEL_H;
+                 const PANEL_Y = 40; // パネル位置変更に対応
+                 const PLAYER_AREA_RESERVE = Math.max(250, H * 0.4); 
+                 const MAX_PANEL_H = H - PANEL_Y - PLAYER_AREA_RESERVE;
+                 
+                 // ここで正確な PANEL_H を計算するのは複雑なため、簡易的な判定
+                 // 基本的にパネル内ドロップは「パネルのY座標」と「パネルの高さ」で判定する
+                 
+                 const isInsidePanel = endPos.x >= PANEL_X && endPos.x <= PANEL_X + PANEL_W && endPos.y >= PANEL_Y && endPos.y <= H - PLAYER_AREA_RESERVE; // 簡易判定
+                 
                  if (inspecting.pid === ((endPos.y < H/2) ? (isRotated ? 'p1' : 'p2') : (isRotated ? 'p2' : 'p1'))) {
                      if (isInsidePanel) {
-                         const HEADER_HEIGHT = 130; // ヘッダー高さを調整
-                         const SCROLL_ZONE_HEIGHT = 70;
-                         if (endPos.y > PANEL_Y + HEADER_HEIGHT && endPos.y < PANEL_Y + PANEL_H - SCROLL_ZONE_HEIGHT) {
+                         // パネル内のリストエリア判定
+                         const HEADER_HEIGHT = 130;
+                         const SCROLL_ZONE_HEIGHT = 50;
+                         const listAreaTop = PANEL_Y + HEADER_HEIGHT;
+                         const listAreaBottom = Math.min(H - PLAYER_AREA_RESERVE, 450 + PANEL_Y) - SCROLL_ZONE_HEIGHT; // 概算
+
+                         // 厳密な判定はInspectOverlay内部のロジックに依存するため、
+                         // ここでは「パネルの上部ヘッダーより下」かつ「パネルの下部スクロールより上」であればリストへの戻しとみなす
+                         if (endPos.y > listAreaTop && endPos.y < listAreaBottom) {
                              const DISPLAY_CARD_WIDTH = 55; 
                              const CARD_GAP = 10;
                              const TOTAL_CARD_WIDTH = DISPLAY_CARD_WIDTH + CARD_GAP;

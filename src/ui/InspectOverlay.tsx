@@ -25,7 +25,7 @@ export const createInspectOverlay = (
   initialScrollX: number,
   onClose: () => void,
   onCardDown: (card: CardInstance, startPos: { x: number, y: number }) => void,
-  onToggleReveal: (uuid: string) => void,
+  // ▼ 削除: onToggleReveal を引数から削除
   onRevealAll: () => void,
   onMoveToBottom: (uuid: string) => void,
   onMoveToHand: (uuid: string) => void,
@@ -56,7 +56,7 @@ export const createInspectOverlay = (
   
   // 必要高さの計算
   const REQUIRED_LIST_H = 310;
-  const PANEL_Y = 40; // 上端からのマージン
+  const PANEL_Y = 40; 
   const PLAYER_AREA_RESERVE = Math.max(250, H * 0.4); 
   const MAX_PANEL_H = H - PANEL_Y - PLAYER_AREA_RESERVE;
 
@@ -220,11 +220,6 @@ export const createInspectOverlay = (
       e.stopPropagation();
       onCardDown(card, { x: e.global.x, y: e.global.y });
     });
-
-    // ▼ 削除: 二重反応を防ぐため、ここでの pointertap イベントを削除
-    // cardSprite.on('pointertap', () => {
-    //   if (type !== 'trash') onToggleReveal(card.uuid);
-    // });
 
     listContainer.addChild(cardSprite);
     cardSprites.push({ sprite: cardSprite, card, originalIndex: i });
