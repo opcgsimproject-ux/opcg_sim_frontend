@@ -36,7 +36,7 @@ export const createInspectOverlay = (
 ): InspectOverlayContainer => {
   const container = new PIXI.Container() as InspectOverlayContainer;
 
-  // 背景 (少し薄くして盤面を見やすくする)
+  // 背景
   const bg = new PIXI.Graphics();
   bg.beginFill(0x000000, 0.1); 
   bg.drawRect(0, 0, W, H);
@@ -45,30 +45,24 @@ export const createInspectOverlay = (
   bg.on('pointerdown', onClose);
   container.addChild(bg);
 
-  // --- レイアウト定数と自動計算 ---
+  // --- レイアウト定数 ---
   const PADDING = 20;
-  const HEADER_HEIGHT = 120; 
-  const SCROLL_ZONE_HEIGHT = 50;
+  const HEADER_HEIGHT = 130; 
+  const SCROLL_ZONE_HEIGHT = 50; 
   
   // ボタン配置用の定数
-  const BTN_GAP = 38; 
+  const BTN_GAP = 38;
   const BTNS_START_Y = BASE_CARD_HEIGHT / 2 + 20;
   
-  // 必要高さの計算
+  // 必要高さの計算（中間変数を削除して直接計算）
   const REQUIRED_LIST_H = 310;
-  const CALCULATED_H = HEADER_HEIGHT + SCROLL_ZONE_HEIGHT + REQUIRED_LIST_H;
-  
-  // 画面下部（自分エリア）をなるべく空けるため、高さの上限を厳しくする（画面の60%程度まで）
-  // ただし最低限必要な高さは確保する
-  const PANEL_H = Math.min(H * 0.9, Math.max(REQUIRED_LIST_H + HEADER_HEIGHT + SCROLL_ZONE_HEIGHT, 450));
+  const PANEL_H = Math.min(H * 0.85, HEADER_HEIGHT + SCROLL_ZONE_HEIGHT + REQUIRED_LIST_H);
   
   const PANEL_W = Math.min(W * 0.95, 1200);
   const PANEL_X = (W - PANEL_W) / 2;
-  
-  // ▼ 変更: 画面中央ではなく、上部に寄せる (相手エリアに収まるように)
-  const PANEL_Y = 50; 
+  const PANEL_Y = (H - PANEL_H) / 2;
 
-  const CARD_AREA_Y = HEADER_HEIGHT; 
+  const CARD_AREA_Y = HEADER_HEIGHT;
   const LIST_H = PANEL_H - HEADER_HEIGHT - SCROLL_ZONE_HEIGHT;
   
   // パネル背景
@@ -100,6 +94,7 @@ export const createInspectOverlay = (
     const ROW2_Y = 50;
     let btnX = PADDING; 
 
+    // REVEAL ALL
     const revealBtn = new PIXI.Container();
     const rBg = new PIXI.Graphics().beginFill(0x27ae60).drawRoundedRect(0, 0, 100, 30, 4).endFill();
     const rTxt = new PIXI.Text("REVEAL ALL", { fontSize: 12, fill: 'white', fontWeight: 'bold' });
@@ -112,6 +107,7 @@ export const createInspectOverlay = (
     panel.addChild(revealBtn);
     btnX += 110;
 
+    // SHUFFLE
     if (type === 'deck' && onShuffle) {
         const shufBtn = new PIXI.Container();
         const sBg = new PIXI.Graphics().beginFill(0xe67e22).drawRoundedRect(0, 0, 100, 30, 4).endFill();
@@ -301,6 +297,7 @@ export const createInspectOverlay = (
       const X_OFFSET = TOTAL_CARD_WIDTH / 2 + 20;
       const targetX = visualIndex * TOTAL_CARD_WIDTH + X_OFFSET - currentScrollX;
       
+      // カード配置: 少し上寄りに配置
       const targetY = BASE_CARD_HEIGHT / 2 + 10;
       sprite.position.set(targetX, targetY);
     });
