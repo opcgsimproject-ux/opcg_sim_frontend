@@ -54,13 +54,22 @@ export const createInspectOverlay = (
   const BTN_GAP = 38;
   const BTNS_START_Y = BASE_CARD_HEIGHT / 2 + 20;
   
-  // 必要高さの計算（中間変数を削除して直接計算）
+  // 必要高さの計算
   const REQUIRED_LIST_H = 310;
-  const PANEL_H = Math.min(H * 0.85, HEADER_HEIGHT + SCROLL_ZONE_HEIGHT + REQUIRED_LIST_H);
+  
+  // ▼ 変更: 画面上部に配置し、自分の盤面(下部)を空ける計算に変更
+  const PANEL_Y = 40; // 上端からのマージン
+  const PLAYER_AREA_RESERVE = Math.max(250, H * 0.4); // 下部に最低限残したいスペース（手札など用）
+  const MAX_PANEL_H = H - PANEL_Y - PLAYER_AREA_RESERVE; // パネルに使える最大高さ
+
+  // 必要な高さを確保しつつ、最大高さを超えないように調整
+  // (ただし最低限 450px は確保して操作不能になるのを防ぐ)
+  const CALCULATED_REQUIRED_H = HEADER_HEIGHT + SCROLL_ZONE_HEIGHT + REQUIRED_LIST_H;
+  const PANEL_H = Math.max(450, Math.min(MAX_PANEL_H, CALCULATED_REQUIRED_H));
   
   const PANEL_W = Math.min(W * 0.95, 1200);
   const PANEL_X = (W - PANEL_W) / 2;
-  const PANEL_Y = (H - PANEL_H) / 2;
+  // PANEL_Y は上で定義済み (上部固定)
 
   const CARD_AREA_Y = HEADER_HEIGHT;
   const LIST_H = PANEL_H - HEADER_HEIGHT - SCROLL_ZONE_HEIGHT;
@@ -297,7 +306,6 @@ export const createInspectOverlay = (
       const X_OFFSET = TOTAL_CARD_WIDTH / 2 + 20;
       const targetX = visualIndex * TOTAL_CARD_WIDTH + X_OFFSET - currentScrollX;
       
-      // カード配置: 少し上寄りに配置
       const targetY = BASE_CARD_HEIGHT / 2 + 10;
       sprite.position.set(targetX, targetY);
     });
