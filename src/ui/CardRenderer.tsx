@@ -35,8 +35,7 @@ export const createCardContainer = (
       uuid: card.uuid,
       card_id: card.card_id,
       id: card.id,
-      is_face_up: card.is_face_up,
-      owner: card.owner_id
+      is_face_up: card.is_face_up
     });
   }
 
@@ -82,10 +81,14 @@ export const createCardContainer = (
     
     // 1. まずは「裏面」画像を取得（フォールバック用）
     const fallbackUrl = getBackImageUrl('MAIN');
+    // 裏面は共通なのでキャッシュを活用
     const fallbackTexture = PIXI.Texture.from(fallbackUrl);
     
     // 2. 本命のテクスチャ
-    const targetTexture = PIXI.Texture.from(imageUrl);
+    // ★重要修正: キャッシュ汚染（CORS Cache Taint）を回避するため、
+    // ゲーム画面用には独自のクエリパラメータを付与して別キャッシュとして読み込ませる
+    const webglUrl = imageUrl + '?format=webgl'; 
+    const targetTexture = PIXI.Texture.from(webglUrl);
 
     // 3. スプライト作成
     // 本命が既にロード済み(valid)ならそれを、そうでなければ裏面を初期設定
@@ -99,7 +102,7 @@ export const createCardContainer = (
     // 4. ロード完了監視と差し替え
     if (!targetTexture.valid && imageUrl !== fallbackUrl) {
         const updateTexture = () => {
-            if (isLeader) console.log(`[CardRenderer] Leader image loaded: ${imageUrl}`);
+            if (isLeader) console.log(`[CardRenderer] Leader image loaded: ${webglUrl}`);
             if (!sprite.destroyed) {
                 sprite.texture = targetTexture;
                 sprite.width = cw;
@@ -113,12 +116,10 @@ export const createCardContainer = (
         
         targetTexture.baseTexture.on('error', (event) => {
             if (isLeader) {
-                console.error(`[CardRenderer] Leader image FAILED to load: ${imageUrl}`, event);
+                console.error(`[CardRenderer] Leader image FAILED to load: ${webglUrl}`, event);
             }
             logger.warn('ui.texture_error', `Failed to load image: ${imageUrl}`);
         });
-    } else if (targetTexture.valid && isLeader) {
-        console.log(`[CardRenderer] Leader image already valid (cached): ${imageUrl}`);
     }
     
     const mask = new PIXI.Graphics();
