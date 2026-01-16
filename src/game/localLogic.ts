@@ -18,12 +18,15 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
     
     let leader: LeaderCard | null = null;
     if (leaderRaw) {
+      // ▼ 修正: ID解決ロジックを強化
+      const originalId = leaderRaw.card_id || leaderRaw.uuid || leaderRaw.number || leaderRaw.id || "LEADER";
+      
       leader = {
         name: "Unknown Leader",
         power: 5000,
         ...leaderRaw,
-        card_id: leaderRaw.uuid || leaderRaw.card_id || leaderRaw.number || leaderRaw.id || "LEADER",
-        uuid: uuidv4(),
+        card_id: originalId, // 確実に設定
+        uuid: uuidv4(),      // 新しいUUIDを発行
         owner_id: playerId,
         is_rest: false,
         attached_don: 0,
@@ -35,7 +38,8 @@ export const createInitialGameState = (p1Deck: any, p2Deck: any, roomName: strin
       .filter((c: any) => (c.type || '').toUpperCase() !== 'LEADER')
       .map((c: any) => ({
         ...c,
-        card_id: c.uuid || c.card_id || c.number || c.id,
+        // ▼ 修正: メインカードも同様にIDを確保
+        card_id: c.card_id || c.uuid || c.number || c.id,
         uuid: uuidv4(),
         owner_id: playerId,
         is_rest: false,
