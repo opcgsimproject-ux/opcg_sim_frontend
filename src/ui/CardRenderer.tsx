@@ -27,6 +27,18 @@ export const createCardContainer = (
     container.rotation = Math.PI / 2;
   }
 
+  // ▼ デバッグ: リーダーカードの場合のみ情報を詳細に出力
+  const isLeader = card?.type === 'LEADER' || card?.type === 'リーダー';
+  if (isLeader) {
+    console.log(`[CardRenderer] Rendering Leader:`, {
+        name: card.name,
+        card_id: card.card_id,
+        uuid: card.uuid,
+        id: card.id,
+        is_face_up: card.is_face_up
+    });
+  }
+
   // --- 画像URLの決定 ---
   let imageUrl: string | null = null;
   const cardName = card?.name || "";
@@ -39,11 +51,13 @@ export const createCardContainer = (
     } else if (isBack) {
       imageUrl = getBackImageUrl('MAIN');
     } else {
-      // ▼ 修正: card_id が無い場合、uuid もチェックする
-      // リーダーカードなどは card_id が空で uuid に品番が入っている場合があるため
+      // IDチェック（リーダー等の揺らぎ吸収）
       const targetId = card?.card_id || card?.uuid;
       if (targetId) {
         imageUrl = getCardImageUrl(targetId);
+        if (isLeader) console.log(`[CardRenderer] Leader Image URL: ${imageUrl}`);
+      } else if (isLeader) {
+        console.warn(`[CardRenderer] Leader has no target ID!`);
       }
     }
   }
@@ -65,43 +79,64 @@ export const createCardContainer = (
   } else if (imageUrl) {
     // --- 画像表示モード ---
     
-    // 1. フォールバック（裏面）テクスチャ
+    // 1. まずは「裏面」画像を取得（フォールバック用）
     const fallbackUrl = getBackImageUrl('MAIN');
     const fallbackTexture = PIXI.Texture.from(fallbackUrl);
     
-    // 2. 本命のテクスチャ
-    const targetTexture = PIXI.Texture.from(imageUrl);
-
-    // 3. スプライト作成
-    // 本命が既にロード済み(valid)ならそれを、そうでなければ裏面を初期設定
-    const initialTexture = targetTexture.valid ? targetTexture : fallbackTexture;
-    const sprite = new PIXI.Sprite(initialTexture);
-    
+    // 2. スプライトを作成（最初は裏面を表示しておく）
+    const sprite = new PIXI.Sprite(fallbackTexture);
     sprite.width = cw;
     sprite.height = ch;
     sprite.anchor.set(0.5);
 
-    // 4. ロード完了監視と差し替え
-    if (!targetTexture.valid && imageUrl !== fallbackUrl) {
-        const onLoaded = () => {
-            if (!sprite.destroyed) {
-                sprite.texture = targetTexture;
-                sprite.width = cw;
-                sprite.height = ch;
-            }
+    // 3. 本命の画像を読み込み
+    if (imageUrl !== fallbackUrl) {
+      // PIXIのキャッシュにあれば即座に使用
+      const cachedTexture = PIXI.utils.TextureCache[imageUrl];
+      
+      if (cachedTexture && cachedTexture.valid) {
+        sprite.texture = cachedTexture;
+        sprite.width = cw;
+        sprite.height = ch;
+      } else {
+        // 新規読み込み (Imageオブジェクトを使用)
+        const img = new Image();
+        img.crossOrigin = "anonymous"; // WebGLで画像を使うために必須
+
+        img.onload = () => {
+          if (isLeader) console.log(`[CardRenderer] Image loaded successfully: ${imageUrl}`);
+          const texture = PIXI.Texture.from(img);
+          
+          if (imageUrl) {
+             (PIXI.utils.TextureCache as any)[imageUrl] = texture;
+          }
+          
+          if (!sprite.destroyed) {
+            sprite.texture = texture;
+            sprite.width = cw;
+            sprite.height = ch;
+          }
         };
 
-        // 既にロード中かもしれないのでイベントをリッスン
-        targetTexture.baseTexture.once('loaded', onLoaded);
-        
-        // 万が一イベント登録前にロード完了していた場合の保険
-        if (targetTexture.valid) {
-            onLoaded();
-        }
+        img.onerror = () => {
+          console.warn(`[CardRenderer] Failed to load image: ${imageUrl}`);
+          logger.warn('ui.image_load_error', `Failed to load image: ${imageUrl}`);
+        };
 
-        targetTexture.baseTexture.once('error', () => {
-            logger.warn('ui.texture_error', `Failed to load texture: ${imageUrl}`);
-        });
+        // ハンドラ設定後に読み込み開始
+        img.src = imageUrl;
+        
+        // キャッシュヒット時のケア
+        if (img.complete && img.naturalWidth > 0) {
+             const texture = PIXI.Texture.from(img);
+             if (imageUrl) {
+                (PIXI.utils.TextureCache as any)[imageUrl] = texture;
+             }
+             sprite.texture = texture;
+             sprite.width = cw;
+             sprite.height = ch;
+        }
+      }
     }
     
     const mask = new PIXI.Graphics();
@@ -163,7 +198,7 @@ export const createCardContainer = (
   // --- 情報表示 ---
   if (!isBack) {
     const isResource = ['Trash', 'Deck', 'Life'].includes(cardName) || cardName.startsWith('Don!!');
-    const isLeader = card?.type === 'LEADER' || card?.type === 'リーダー';
+    // const isLeader = card?.type === 'LEADER' || card?.type === 'リーダー'; // 冒頭で定義済み
 
     // バッジ（コスト）
     if (card?.cost !== undefined && !isLeader && !isResource) {
