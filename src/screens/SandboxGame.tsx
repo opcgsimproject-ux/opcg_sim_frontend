@@ -165,7 +165,13 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           const deckData = localStorage.getItem(`opcg_deck_${id}`);
           if (deckData) {
             const parsed = JSON.parse(deckData);
-            options.push({ id: id, name: parsed.name || `Local Deck ${id}`, leaderId: parsed.leader_id });
+            // リーダー情報の安全な取得
+            let leaderId = parsed.leader_id;
+            if (!leaderId && parsed.deck && parsed.deck.leader) {
+               const l = Array.isArray(parsed.deck.leader) ? parsed.deck.leader[0] : parsed.deck.leader;
+               if (l) leaderId = l.uuid || l.card_id;
+            }
+            options.push({ id: id, name: parsed.name || `Local Deck ${id}`, leaderId: leaderId });
           }
         });
       } catch(e) { console.error(e); }
@@ -311,7 +317,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           inspecting.type, inspectingCards, revealedCardIds, W, H, inspectScrollXRef.current, 
           () => setInspecting(null), 
           (card, startPos) => onCardDown({ global: startPos } as any, card),
-          // ▼ 復活: タップイベント（表裏切り替え）を渡す
           (uuid) => { 
               // 長押し成立後は何もしない
               if (longPressTriggeredRef.current) return;
@@ -493,18 +498,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                 return; 
             }
 
-            if (inspecting) {
-                // ▼ 削除: ここでのトグル処理を削除（InspectOverlay側に任せる）
-                /*
-                if (inspectingCards.some(c => c.uuid === card.uuid)) {
-                    const newSet = new Set(revealedCardIds);
-                    if (newSet.has(card.uuid)) newSet.delete(card.uuid);
-                    else newSet.add(card.uuid);
-                    setRevealedCardIds(newSet);
-                }
-                */
-                return;
-            }
+            if (inspecting) return;
 
             const { height: H } = app.screen; const midY = H / 2;
             const isTopArea = e.clientY < midY; 
@@ -534,7 +528,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     return () => { window.removeEventListener('pointermove', onPointerMove); window.removeEventListener('pointerup', onPointerUp); };
   }, [dragState, gameState, inspecting, isRotated, myPlayerId, inspectingCards, revealedCardIds, isActionBlockedByMulligan, startDrag]);
 
-  // (以下、handleReplacement 等の既存コード)
   const handleReplacement = async (trashCardUuids: string[]) => {
     if (!replacementState || trashCardUuids.length === 0 || !gameState) return;
     const { card, destPid } = replacementState;
@@ -596,16 +589,38 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
               return finalData;
           };
 
+          // ▼ 追加: データの正規化処理
+          const normalizeDeckData = (data: any) => {
+            if (!data) return { leader: null, cards: [] };
+            let leader = data.leader;
+            if (Array.isArray(leader)) {
+                leader = leader.length > 0 ? leader[0] : null;
+            }
+            if (data.deck && data.deck.leader) {
+                 if (Array.isArray(data.deck.leader)) {
+                     leader = data.deck.leader.length > 0 ? data.deck.leader[0] : null;
+                 } else {
+                     leader = data.deck.leader;
+                 }
+            }
+            return {
+                ...data,
+                leader: leader, // 配列からオブジェクトへ変換
+                cards: data.cards || (data.deck ? data.deck.cards : [])
+            };
+          };
+
           if (isLocalMode && type === 'SET_DECK') {
-              const deckData = await getDeckData(params.deck_id);
-              localParams.deckData = deckData;
+              const rawData = await getDeckData(params.deck_id);
+              localParams.deckData = normalizeDeckData(rawData);
           }
 
           if (type === 'START') {
               const p1DeckId = gameState.players.p1.name;
               const p2DeckId = gameState.players.p2.name;
               const [d1, d2] = await Promise.all([getDeckData(p1DeckId), getDeckData(p2DeckId)]);
-              localParams.p1Deck = d1; localParams.p2Deck = d2;
+              localParams.p1Deck = normalizeDeckData(d1);
+              localParams.p2Deck = normalizeDeckData(d2);
           }
 
           const newState = handleLocalAction(gameState, type, { ...localParams, player_id: pid });
