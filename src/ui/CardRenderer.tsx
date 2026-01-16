@@ -2,7 +2,6 @@ import * as PIXI from 'pixi.js';
 import { LAYOUT_CONSTANTS, LAYOUT_PARAMS } from '../layout/layout.config';
 import { GAME_UI_CONFIG } from '../game/game.config';
 import { logger } from '../utils/logger';
-// ▼ 変更: API_CONFIGの直接参照をやめ、imageAssetsから関数をインポート
 import { getCardImageUrl, getBackImageUrl } from '../utils/imageAssets';
 
 const { COLORS, SIZES } = LAYOUT_CONSTANTS;
@@ -63,11 +62,40 @@ export const createCardContainer = (
     container.addChild(txt);
 
   } else if (imageUrl) {
-    // 画像表示モード
-    const sprite = PIXI.Sprite.from(imageUrl);
+    // --- 画像表示モード (非同期読み込み対応版) ---
+    
+    // 1. まずフォールバック（裏面）用のテクスチャを用意
+    const fallbackUrl = getBackImageUrl('MAIN');
+    const fallbackTexture = PIXI.Texture.from(fallbackUrl);
+    
+    // 2. スプライトを生成（最初はフォールバックで初期化しても良いが、targetTextureが既にあればそちらを使う）
+    const targetTexture = PIXI.Texture.from(imageUrl);
+    
+    // ロード済みかどうかで初期テクスチャを決定
+    const initialTexture = targetTexture.valid ? targetTexture : fallbackTexture;
+    const sprite = new PIXI.Sprite(initialTexture);
+    
     sprite.width = cw;
     sprite.height = ch;
     sprite.anchor.set(0.5);
+
+    // 3. ロード未完了の場合、完了イベントを待機して差し替え
+    if (!targetTexture.valid) {
+      targetTexture.baseTexture.once('loaded', () => {
+        sprite.texture = targetTexture;
+        // テクスチャ差し替えでサイズが変わる可能性があるため再設定
+        sprite.width = cw;
+        sprite.height = ch;
+      });
+      
+      targetTexture.baseTexture.once('error', () => {
+        logger.warn('ui.card_image_error', `Failed to load image: ${imageUrl}`);
+        // エラー時はフォールバックのままにする（必要ならここで再セット）
+        sprite.texture = fallbackTexture;
+        sprite.width = cw;
+        sprite.height = ch;
+      });
+    }
     
     const mask = new PIXI.Graphics();
     mask.beginFill(0xFFFFFF);
