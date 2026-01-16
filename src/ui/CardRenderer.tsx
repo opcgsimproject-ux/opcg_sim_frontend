@@ -101,7 +101,8 @@ export const createCardContainer = (
           }
         };
 
-        img.onerror = (e) => {
+        // ▼ 修正: 引数 'e' を削除してエラーを解消
+        img.onerror = () => {
           console.warn(`[CardRenderer] Failed to load image: ${imageUrl}`);
           // 失敗時は裏面のまま維持
         };
@@ -213,25 +214,25 @@ export const createCardContainer = (
       addText(`+${card.attached_don}`, { fontSize: SIZES.FONT_DON, fill: COLORS.TEXT_LIGHT, fontWeight: 'bold' }, bx, by, 'screen');
     }
 
-    // カード名テキスト（画像読み込み失敗時などに役立つため、あえて残すか、画像ロード成功後に消す制御も可能だが、
-    // 現状は上書き表示させることで可読性を担保）
+    // カード名テキスト
     if (!imageUrl) {
-        const nameStyle = { 
-            fontSize: isResource ? SIZES.FONT_NAME_RESOURCE : SIZES.FONT_NAME_NORMAL, 
-            fontWeight: 'bold', 
-            fill: isResource ? COLORS.TEXT_RESOURCE : COLORS.TEXT_DEFAULT 
-        };
-        if (isResource) {
-            addText(cardName, nameStyle, 0, 0, 'screen');
+      const nameStyle = { 
+        fontSize: isResource ? SIZES.FONT_NAME_RESOURCE : SIZES.FONT_NAME_NORMAL, 
+        fontWeight: 'bold', 
+        fill: isResource ? COLORS.TEXT_RESOURCE : COLORS.TEXT_DEFAULT 
+      };
+
+      if (isResource) {
+        addText(cardName, nameStyle, 0, 0, 'screen');
+      } else {
+        if (isRest) {
+          const posX = cw / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
+          addText(cardName, nameStyle, posX, 0, 'screen'); 
         } else {
-            if (isRest) {
-                const posX = cw / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
-                addText(cardName, nameStyle, posX, 0, 'screen'); 
-            } else {
-                const posY = ch / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
-                addText(cardName, nameStyle, 0, posY, 'screen');
-            }
+          const posY = ch / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
+          addText(cardName, nameStyle, 0, posY, 'screen');
         }
+      }
     }
 
   } else {
