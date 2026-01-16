@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js';
 import { LAYOUT_CONSTANTS, LAYOUT_PARAMS } from '../layout/layout.config';
 import { GAME_UI_CONFIG } from '../game/game.config';
 import { logger } from '../utils/logger';
-import { API_CONFIG } from '../api/api.config';
+import { getCardImageUrl, getBackImageUrl } from '../utils/imageAssets';
 
 const { COLORS, SIZES } = LAYOUT_CONSTANTS;
 const { SHAPE, UI_DETAILS, PHYSICS } = LAYOUT_PARAMS;
@@ -14,11 +14,9 @@ export const createCardContainer = (
   options: { count?: number; onClick: () => void; isOpponent?: boolean }
 ) => {
   const container = new PIXI.Container();
-  // ▼▼▼ 追加: UUIDをコンテナ名として設定（DnD用） ▼▼▼
   if (card?.uuid) {
     container.name = card.uuid;
   }
-  // ▲▲▲ 追加ここまで ▲▲▲
 
   const isOpponent = options.isOpponent ?? false;
   const isRest = card?.is_rest === true;
@@ -35,17 +33,17 @@ export const createCardContainer = (
 
   if (!isEmpty) {
     if (cardName === 'Don!! Deck') {
-      // ドンデッキ裏面
-      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/DON_back.png`;
+      imageUrl = getBackImageUrl('DON');
     } else if (cardName === 'Deck' || cardName === 'Life') {
-      // デッキ・ライフ裏面
-      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/OPCG_back.png`;
+      imageUrl = getBackImageUrl('MAIN');
     } else if (isBack) {
-      // その他の裏面カード（手札など）
-      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/OPCG_back.png`;
-    } else if (card?.card_id) {
-      // 表面: IDがある場合 (DONを含む)
-      imageUrl = `${API_CONFIG.IMAGE_BASE_URL}/${card.card_id}.png`;
+      imageUrl = getBackImageUrl('MAIN');
+    } else {
+      // ▼ 修正: card_id が無い場合、id プロパティもチェックする
+      const targetId = card?.card_id || card?.id;
+      if (targetId) {
+        imageUrl = getCardImageUrl(targetId);
+      }
     }
   }
 
@@ -64,11 +62,39 @@ export const createCardContainer = (
     container.addChild(txt);
 
   } else if (imageUrl) {
-    // 画像表示モード
-    const sprite = PIXI.Sprite.from(imageUrl);
+    // --- 画像表示モード (非同期読み込み強化版) ---
+    const fallbackUrl = getBackImageUrl('MAIN');
+    const fallbackTexture = PIXI.Texture.from(fallbackUrl);
+    
+    const targetTexture = PIXI.Texture.from(imageUrl);
+    
+    // ロード済みかどうかで初期テクスチャを決定
+    const initialTexture = targetTexture.valid ? targetTexture : fallbackTexture;
+    const sprite = new PIXI.Sprite(initialTexture);
+    
     sprite.width = cw;
     sprite.height = ch;
     sprite.anchor.set(0.5);
+
+    // ロード未完了の場合、完了イベントを待機して差し替え
+    if (!targetTexture.valid && imageUrl !== fallbackUrl) {
+      // PIXI.Assets (v7+) または PIXI.Loader (v6) の判定
+      if (PIXI.Assets && typeof PIXI.Assets.load === 'function') {
+        PIXI.Assets.load(imageUrl).then((texture) => {
+          sprite.texture = texture;
+          sprite.width = cw; 
+          sprite.height = ch;
+        }).catch(() => {
+          // エラー時はフォールバックのまま
+        });
+      } else {
+        targetTexture.baseTexture.once('loaded', () => {
+          sprite.texture = targetTexture;
+          sprite.width = cw;
+          sprite.height = ch;
+        });
+      }
+    }
     
     const mask = new PIXI.Graphics();
     mask.beginFill(0xFFFFFF);
@@ -79,7 +105,6 @@ export const createCardContainer = (
     container.addChild(sprite);
     container.addChild(mask);
 
-    // 枠線
     const border = new PIXI.Graphics();
     border.lineStyle(SHAPE.STROKE_WIDTH_ZONE, COLORS.ZONE_BORDER);
     border.drawRoundedRect(-cw / 2, -ch / 2, cw, ch, SHAPE.CORNER_RADIUS_CARD);
@@ -89,7 +114,6 @@ export const createCardContainer = (
     // 画像なし & 裏面でない場合のフォールバック（色塗り）
     const g = new PIXI.Graphics();
     g.lineStyle(SHAPE.STROKE_WIDTH_ZONE, COLORS.ZONE_BORDER);
-    // isBackのケースは上でimageUrlが設定されるはずだが念のため
     g.beginFill(isBack ? COLORS.CARD_BACK : COLORS.ZONE_FILL);
     g.drawRoundedRect(-cw / 2, -ch / 2, cw, ch, SHAPE.CORNER_RADIUS_CARD);
     g.endFill();
@@ -128,12 +152,12 @@ export const createCardContainer = (
     container.addChild(txt);
   };
 
-  // --- 情報表示 (画像がある場合はテキストを非表示にする) ---
+  // --- 情報表示 ---
   if (!isBack) {
     const isResource = ['Trash', 'Deck', 'Life'].includes(cardName) || cardName.startsWith('Don!!');
     const isLeader = card?.type === 'LEADER' || card?.type === 'リーダー';
 
-    // バッジ（コスト）
+    // バッジ（コスト）- Leaderは表示しない
     if (card?.cost !== undefined && !isLeader && !isResource) {
       const cx = -cw / 2 + UI_DETAILS.CARD_BADGE_OFFSET;
       const cy = -ch / 2 + UI_DETAILS.CARD_BADGE_OFFSET;
@@ -152,7 +176,7 @@ export const createCardContainer = (
       addText(`+${card.counter}`, { fontSize: SIZES.FONT_COUNTER, fill: '#ffff00', fontWeight: 'bold', stroke: 'black', strokeThickness: 4 }, xOffset, 0, -Math.PI / 2);
     }
 
-    // パワー
+    // パワー (Leaderも表示)
     if (card?.power !== undefined && !isResource) {
       const pStyle = { fontSize: SIZES.FONT_POWER, fill: COLORS.TEXT_POWER, fontWeight: 'bold', stroke: 'black', strokeThickness: 4 };
       if (isRest) {
@@ -175,7 +199,7 @@ export const createCardContainer = (
       addText(`+${card.attached_don}`, { fontSize: SIZES.FONT_DON, fill: COLORS.TEXT_LIGHT, fontWeight: 'bold' }, bx, by, 'screen');
     }
 
-    // ★重要: カード名テキストの制御
+    // カード名テキスト
     if (!imageUrl) {
       const nameStyle = { 
         fontSize: isResource ? SIZES.FONT_NAME_RESOURCE : SIZES.FONT_NAME_NORMAL, 
@@ -197,7 +221,6 @@ export const createCardContainer = (
     }
 
   } else {
-    // 裏面テキスト
     if (!imageUrl) {
       addText(GAME_UI_CONFIG.TEXT.BACK_SIDE, { fontSize: SIZES.FONT_BACK, fontWeight: 'bold', fill: COLORS.TEXT_LIGHT, align: 'center' }, 0, 0, 'screen');
     }
