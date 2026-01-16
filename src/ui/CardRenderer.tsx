@@ -28,7 +28,7 @@ export const createCardContainer = (
   }
 
   // --- 画像URLの決定 ---
-  let imageUrl = null;
+  let imageUrl: string | null = null;
   const cardName = card?.name || "";
 
   if (!isEmpty) {
@@ -39,7 +39,7 @@ export const createCardContainer = (
     } else if (isBack) {
       imageUrl = getBackImageUrl('MAIN');
     } else {
-      // ▼ 修正: card_id が無い場合、id プロパティもチェックする
+      // IDチェック（リーダー等の揺らぎ吸収）
       const targetId = card?.card_id || card?.id;
       if (targetId) {
         imageUrl = getCardImageUrl(targetId);
@@ -62,37 +62,49 @@ export const createCardContainer = (
     container.addChild(txt);
 
   } else if (imageUrl) {
-    // --- 画像表示モード (非同期読み込み強化版) ---
+    // --- 画像表示モード (HTMLImageElement使用による確実な読み込み) ---
+    
+    // 1. まずは「裏面」画像を取得（フォールバック用）
     const fallbackUrl = getBackImageUrl('MAIN');
     const fallbackTexture = PIXI.Texture.from(fallbackUrl);
     
-    const targetTexture = PIXI.Texture.from(imageUrl);
-    
-    // ロード済みかどうかで初期テクスチャを決定
-    const initialTexture = targetTexture.valid ? targetTexture : fallbackTexture;
-    const sprite = new PIXI.Sprite(initialTexture);
-    
+    // 2. スプライトを作成（最初は裏面を表示しておく）
+    // これにより読み込み中も「カードがあること」は視認できる
+    const sprite = new PIXI.Sprite(fallbackTexture);
     sprite.width = cw;
     sprite.height = ch;
     sprite.anchor.set(0.5);
 
-    // ロード未完了の場合、完了イベントを待機して差し替え
-    if (!targetTexture.valid && imageUrl !== fallbackUrl) {
-      // PIXI.Assets (v7+) または PIXI.Loader (v6) の判定
-      if (PIXI.Assets && typeof PIXI.Assets.load === 'function') {
-        PIXI.Assets.load(imageUrl).then((texture) => {
-          sprite.texture = texture;
-          sprite.width = cw; 
-          sprite.height = ch;
-        }).catch(() => {
-          // エラー時はフォールバックのまま
-        });
+    // 3. 本命の画像を Image オブジェクトで読み込む
+    // PIXI.Assets.load ではなく標準の Image を使うことで、ブラウザキャッシュと挙動を一致させる
+    if (imageUrl !== fallbackUrl) {
+      // 既にPIXIキャッシュにあればそれを使う
+      const cachedTexture = PIXI.utils.TextureCache[imageUrl];
+      
+      if (cachedTexture && cachedTexture.valid) {
+        sprite.texture = cachedTexture;
       } else {
-        targetTexture.baseTexture.once('loaded', () => {
-          sprite.texture = targetTexture;
-          sprite.width = cw;
-          sprite.height = ch;
-        });
+        const img = new Image();
+        img.crossOrigin = "anonymous"; // CORS対応
+        img.src = imageUrl;
+
+        img.onload = () => {
+          // 読み込み完了後にテクスチャ化
+          const texture = PIXI.Texture.from(img);
+          // キャッシュ登録（次回以降のためにURLキーで登録しておく）
+          PIXI.Texture.addToCache(texture, imageUrl!);
+          
+          if (!sprite.destroyed) {
+            sprite.texture = texture;
+            sprite.width = cw; // テクスチャ変更後にサイズ再設定
+            sprite.height = ch;
+          }
+        };
+
+        img.onerror = (e) => {
+          console.warn(`[CardRenderer] Failed to load image: ${imageUrl}`);
+          // 失敗時は裏面のまま維持
+        };
       }
     }
     
@@ -105,6 +117,7 @@ export const createCardContainer = (
     container.addChild(sprite);
     container.addChild(mask);
 
+    // 枠線
     const border = new PIXI.Graphics();
     border.lineStyle(SHAPE.STROKE_WIDTH_ZONE, COLORS.ZONE_BORDER);
     border.drawRoundedRect(-cw / 2, -ch / 2, cw, ch, SHAPE.CORNER_RADIUS_CARD);
@@ -125,6 +138,7 @@ export const createCardContainer = (
   // テキスト追加ヘルパー
   const addText = (content: string, style: any, x: number, y: number, rotationMode: 'screen' | 'card' | number = 'screen') => {
     const txt = new PIXI.Text(content, style);
+    // 画像がある場合は視認性確保のためアウトラインをつける
     if (!isBack && imageUrl) {
       style.stroke = '#000000';
       style.strokeThickness = 3;
@@ -157,7 +171,7 @@ export const createCardContainer = (
     const isResource = ['Trash', 'Deck', 'Life'].includes(cardName) || cardName.startsWith('Don!!');
     const isLeader = card?.type === 'LEADER' || card?.type === 'リーダー';
 
-    // バッジ（コスト）- Leaderは表示しない
+    // バッジ（コスト）
     if (card?.cost !== undefined && !isLeader && !isResource) {
       const cx = -cw / 2 + UI_DETAILS.CARD_BADGE_OFFSET;
       const cy = -ch / 2 + UI_DETAILS.CARD_BADGE_OFFSET;
@@ -176,7 +190,7 @@ export const createCardContainer = (
       addText(`+${card.counter}`, { fontSize: SIZES.FONT_COUNTER, fill: '#ffff00', fontWeight: 'bold', stroke: 'black', strokeThickness: 4 }, xOffset, 0, -Math.PI / 2);
     }
 
-    // パワー (Leaderも表示)
+    // パワー
     if (card?.power !== undefined && !isResource) {
       const pStyle = { fontSize: SIZES.FONT_POWER, fill: COLORS.TEXT_POWER, fontWeight: 'bold', stroke: 'black', strokeThickness: 4 };
       if (isRest) {
@@ -199,28 +213,29 @@ export const createCardContainer = (
       addText(`+${card.attached_don}`, { fontSize: SIZES.FONT_DON, fill: COLORS.TEXT_LIGHT, fontWeight: 'bold' }, bx, by, 'screen');
     }
 
-    // カード名テキスト
+    // カード名テキスト（画像読み込み失敗時などに役立つため、あえて残すか、画像ロード成功後に消す制御も可能だが、
+    // 現状は上書き表示させることで可読性を担保）
     if (!imageUrl) {
-      const nameStyle = { 
-        fontSize: isResource ? SIZES.FONT_NAME_RESOURCE : SIZES.FONT_NAME_NORMAL, 
-        fontWeight: 'bold', 
-        fill: isResource ? COLORS.TEXT_RESOURCE : COLORS.TEXT_DEFAULT 
-      };
-
-      if (isResource) {
-        addText(cardName, nameStyle, 0, 0, 'screen');
-      } else {
-        if (isRest) {
-          const posX = cw / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
-          addText(cardName, nameStyle, posX, 0, 'screen'); 
+        const nameStyle = { 
+            fontSize: isResource ? SIZES.FONT_NAME_RESOURCE : SIZES.FONT_NAME_NORMAL, 
+            fontWeight: 'bold', 
+            fill: isResource ? COLORS.TEXT_RESOURCE : COLORS.TEXT_DEFAULT 
+        };
+        if (isResource) {
+            addText(cardName, nameStyle, 0, 0, 'screen');
         } else {
-          const posY = ch / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
-          addText(cardName, nameStyle, 0, posY, 'screen');
+            if (isRest) {
+                const posX = cw / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
+                addText(cardName, nameStyle, posX, 0, 'screen'); 
+            } else {
+                const posY = ch / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
+                addText(cardName, nameStyle, 0, posY, 'screen');
+            }
         }
-      }
     }
 
   } else {
+    // 裏面テキスト
     if (!imageUrl) {
       addText(GAME_UI_CONFIG.TEXT.BACK_SIDE, { fontSize: SIZES.FONT_BACK, fontWeight: 'bold', fill: COLORS.TEXT_LIGHT, align: 'center' }, 0, 0, 'screen');
     }
