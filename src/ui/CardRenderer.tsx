@@ -20,7 +20,6 @@ export const createCardContainer = (
 
   const isOpponent = options.isOpponent ?? false;
   const isRest = card?.is_rest === true;
-  // is_face_upがundefinedの場合は「表(false)」とみなす (Leader等は通常表向き)
   const isBack = card?.is_face_up === false;
   const isEmpty = options.count !== undefined && options.count <= 0;
 
@@ -40,6 +39,7 @@ export const createCardContainer = (
     } else if (isBack) {
       imageUrl = getBackImageUrl('MAIN');
     } else {
+      // IDチェック（リーダー等の揺らぎ吸収）
       const targetId = card?.card_id || card?.id;
       if (targetId) {
         imageUrl = getCardImageUrl(targetId);
@@ -49,6 +49,7 @@ export const createCardContainer = (
 
   // --- 描画処理 ---
   if (isEmpty) {
+    // 0枚時は枠のみ
     const g = new PIXI.Graphics();
     g.lineStyle(2, 0x666666, 0.5);
     g.beginFill(0x000000, 0.2);
@@ -63,17 +64,19 @@ export const createCardContainer = (
   } else if (imageUrl) {
     // --- 画像表示モード ---
     
-    // 1. フォールバック（裏面）で初期化
+    // 1. まずは「裏面」画像を取得（フォールバック用）
     const fallbackUrl = getBackImageUrl('MAIN');
     const fallbackTexture = PIXI.Texture.from(fallbackUrl);
     
+    // 2. スプライトを作成（最初は裏面を表示しておく）
     const sprite = new PIXI.Sprite(fallbackTexture);
     sprite.width = cw;
     sprite.height = ch;
     sprite.anchor.set(0.5);
 
-    // 2. 本命の画像を読み込み
+    // 3. 本命の画像を読み込み
     if (imageUrl !== fallbackUrl) {
+      // PIXIのキャッシュにあれば即座に使用
       const cachedTexture = PIXI.utils.TextureCache[imageUrl];
       
       if (cachedTexture && cachedTexture.valid) {
@@ -81,55 +84,43 @@ export const createCardContainer = (
         sprite.width = cw;
         sprite.height = ch;
       } else {
-        // 画像ローダー関数
-        const loadImage = (url: string, useCors: boolean) => {
-          const img = new Image();
-          if (useCors) {
-            img.crossOrigin = "anonymous";
+        // 新規読み込み (Imageオブジェクトを使用)
+        const img = new Image();
+        img.crossOrigin = "anonymous"; // WebGLで画像を使うために必須
+
+        img.onload = () => {
+          const texture = PIXI.Texture.from(img);
+          
+          // 直接キャッシュ配列に登録
+          if (imageUrl) {
+             (PIXI.utils.TextureCache as any)[imageUrl] = texture;
           }
-
-          const onLoaded = () => {
-            const texture = PIXI.Texture.from(img);
-            if (imageUrl) {
-               (PIXI.utils.TextureCache as any)[imageUrl] = texture;
-            }
-            if (!sprite.destroyed) {
-              sprite.texture = texture;
-              sprite.width = cw;
-              sprite.height = ch;
-            }
-            cleanup();
-          };
-
-          const onError = (e: any) => {
-            cleanup();
-            if (useCors) {
-              // CORSありで失敗した場合、CORSなしでリトライ
-              logger.warn('ui.image_cors_retry', `Retrying without CORS: ${url}`);
-              loadImage(url, false);
-            } else {
-              // リトライも失敗した場合は諦める（裏面のまま）
-              logger.error('ui.image_load_fail', `Failed to load image final: ${url}`);
-            }
-          };
-
-          const cleanup = () => {
-            img.onload = null;
-            img.onerror = null;
-          };
-
-          img.onload = onLoaded;
-          img.onerror = onError;
-          img.src = url;
-
-          // キャッシュヒット時の即時反映
-          if (img.complete && img.naturalWidth > 0) {
-            onLoaded();
+          
+          if (!sprite.destroyed) {
+            sprite.texture = texture;
+            sprite.width = cw;
+            sprite.height = ch;
           }
         };
 
-        // 初回はCORSありで試行
-        loadImage(imageUrl, true);
+        // ▼ 修正: 引数を完全に削除
+        img.onerror = () => {
+          logger.warn('ui.image_load_error', `Failed to load image: ${imageUrl}`);
+        };
+
+        // ハンドラ設定後に読み込み開始
+        img.src = imageUrl;
+        
+        // キャッシュヒット時のケア
+        if (img.complete && img.naturalWidth > 0) {
+             const texture = PIXI.Texture.from(img);
+             if (imageUrl) {
+                (PIXI.utils.TextureCache as any)[imageUrl] = texture;
+             }
+             sprite.texture = texture;
+             sprite.width = cw;
+             sprite.height = ch;
+        }
       }
     }
     
@@ -148,7 +139,7 @@ export const createCardContainer = (
     container.addChild(border);
 
   } else {
-    // 画像なしフォールバック
+    // 画像なし & 裏面でない場合のフォールバック（色塗り）
     const g = new PIXI.Graphics();
     g.lineStyle(SHAPE.STROKE_WIDTH_ZONE, COLORS.ZONE_BORDER);
     g.beginFill(isBack ? COLORS.CARD_BACK : COLORS.ZONE_FILL);
