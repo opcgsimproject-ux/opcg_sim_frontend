@@ -92,7 +92,7 @@ export const createCardContainer = (
         img.onload = () => {
           const texture = PIXI.Texture.from(img);
           
-          // ▼ 修正: PIXI.Texture.addToCache は存在しないため、直接キャッシュ配列に登録
+          // 直接キャッシュ配列に登録
           if (imageUrl) {
              (PIXI.utils.TextureCache as any)[imageUrl] = texture;
           }
@@ -104,7 +104,8 @@ export const createCardContainer = (
           }
         };
 
-        img.onerror = (e) => {
+        // ▼ 修正: 引数 'e' を削除して未使用変数エラーを回避
+        img.onerror = () => {
           logger.warn('ui.image_load_error', `Failed to load image: ${imageUrl}`);
         };
 
