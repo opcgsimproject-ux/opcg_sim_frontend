@@ -39,8 +39,11 @@ export const createCardContainer = (
     } else if (isBack) {
       imageUrl = getBackImageUrl('MAIN');
     } else {
-      // IDチェック（リーダー等の揺らぎ吸収）
-      const targetId = card?.card_id || card?.id;
+      // ▼ 修正: card_id が無い場合、id や uuid もチェックする (DeckBuilderとの互換性確保)
+      const targetId = card?.card_id || card?.id || card?.uuid;
+      
+      // 注意: uuidがランダム生成されたID(GUID)の場合は画像が見つからず404になるが、
+      // 下部のonerrorハンドラで裏面表示にフォールバックされるため問題ない。
       if (targetId) {
         imageUrl = getCardImageUrl(targetId);
       }
@@ -103,8 +106,8 @@ export const createCardContainer = (
           }
         };
 
-        // ▼ 修正: 引数を完全に削除
         img.onerror = () => {
+          // 画像が見つからない場合は警告を出し、裏面のままにする
           logger.warn('ui.image_load_error', `Failed to load image: ${imageUrl}`);
         };
 
