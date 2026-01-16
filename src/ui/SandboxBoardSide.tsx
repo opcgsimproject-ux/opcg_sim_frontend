@@ -29,7 +29,6 @@ export const createSandboxBoardSide = (
 
   const getCardOpts = (_c: Partial<CardInstance>) => ({ 
     onClick: () => {}, 
-    // 【修正】左右反転のみを行い、上下の回転はさせないため常に false
     isOpponent: false 
   });
 
@@ -102,11 +101,17 @@ export const createSandboxBoardSide = (
   const r4Y = getAdjustedY(4);
 
   // リーダー
-  if (p.leader) {
-    const ldr = createCardContainer(p.leader, coords.CW, coords.CH, getCardOpts(p.leader));
+  // ▼ 修正: リーダーが配列として渡ってきた場合に対応 (DeckBuilderの保存形式への対応)
+  let leaderCard = p.leader;
+  if (Array.isArray(leaderCard)) {
+    leaderCard = (leaderCard as any)[0];
+  }
+
+  if (leaderCard) {
+    const ldr = createCardContainer(leaderCard, coords.CW, coords.CH, getCardOpts(leaderCard));
     ldr.x = getX(coords.getLeaderX(W)); 
     ldr.y = r2Y;
-    setupInteractive(ldr, p.leader);
+    setupInteractive(ldr, leaderCard);
     side.addChild(ldr);
   }
 
