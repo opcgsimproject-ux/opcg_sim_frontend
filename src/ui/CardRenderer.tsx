@@ -39,11 +39,9 @@ export const createCardContainer = (
     } else if (isBack) {
       imageUrl = getBackImageUrl('MAIN');
     } else {
-      // ▼ 修正: card_id が無い場合、id や uuid もチェックする (DeckBuilderとの互換性確保)
-      const targetId = card?.card_id || card?.id || card?.uuid;
-      
-      // 注意: uuidがランダム生成されたID(GUID)の場合は画像が見つからず404になるが、
-      // 下部のonerrorハンドラで裏面表示にフォールバックされるため問題ない。
+      // ▼ 修正: card_id が無い場合、uuid もチェックする
+      // リーダーカードなどは card_id が空で uuid に品番が入っている場合があるため
+      const targetId = card?.card_id || card?.uuid;
       if (targetId) {
         imageUrl = getCardImageUrl(targetId);
       }
@@ -67,64 +65,43 @@ export const createCardContainer = (
   } else if (imageUrl) {
     // --- 画像表示モード ---
     
-    // 1. まずは「裏面」画像を取得（フォールバック用）
+    // 1. フォールバック（裏面）テクスチャ
     const fallbackUrl = getBackImageUrl('MAIN');
     const fallbackTexture = PIXI.Texture.from(fallbackUrl);
     
-    // 2. スプライトを作成（最初は裏面を表示しておく）
-    const sprite = new PIXI.Sprite(fallbackTexture);
+    // 2. 本命のテクスチャ
+    const targetTexture = PIXI.Texture.from(imageUrl);
+
+    // 3. スプライト作成
+    // 本命が既にロード済み(valid)ならそれを、そうでなければ裏面を初期設定
+    const initialTexture = targetTexture.valid ? targetTexture : fallbackTexture;
+    const sprite = new PIXI.Sprite(initialTexture);
+    
     sprite.width = cw;
     sprite.height = ch;
     sprite.anchor.set(0.5);
 
-    // 3. 本命の画像を読み込み
-    if (imageUrl !== fallbackUrl) {
-      // PIXIのキャッシュにあれば即座に使用
-      const cachedTexture = PIXI.utils.TextureCache[imageUrl];
-      
-      if (cachedTexture && cachedTexture.valid) {
-        sprite.texture = cachedTexture;
-        sprite.width = cw;
-        sprite.height = ch;
-      } else {
-        // 新規読み込み (Imageオブジェクトを使用)
-        const img = new Image();
-        img.crossOrigin = "anonymous"; // WebGLで画像を使うために必須
-
-        img.onload = () => {
-          const texture = PIXI.Texture.from(img);
-          
-          // 直接キャッシュ配列に登録
-          if (imageUrl) {
-             (PIXI.utils.TextureCache as any)[imageUrl] = texture;
-          }
-          
-          if (!sprite.destroyed) {
-            sprite.texture = texture;
-            sprite.width = cw;
-            sprite.height = ch;
-          }
+    // 4. ロード完了監視と差し替え
+    if (!targetTexture.valid && imageUrl !== fallbackUrl) {
+        const onLoaded = () => {
+            if (!sprite.destroyed) {
+                sprite.texture = targetTexture;
+                sprite.width = cw;
+                sprite.height = ch;
+            }
         };
 
-        img.onerror = () => {
-          // 画像が見つからない場合は警告を出し、裏面のままにする
-          logger.warn('ui.image_load_error', `Failed to load image: ${imageUrl}`);
-        };
-
-        // ハンドラ設定後に読み込み開始
-        img.src = imageUrl;
+        // 既にロード中かもしれないのでイベントをリッスン
+        targetTexture.baseTexture.once('loaded', onLoaded);
         
-        // キャッシュヒット時のケア
-        if (img.complete && img.naturalWidth > 0) {
-             const texture = PIXI.Texture.from(img);
-             if (imageUrl) {
-                (PIXI.utils.TextureCache as any)[imageUrl] = texture;
-             }
-             sprite.texture = texture;
-             sprite.width = cw;
-             sprite.height = ch;
+        // 万が一イベント登録前にロード完了していた場合の保険
+        if (targetTexture.valid) {
+            onLoaded();
         }
-      }
+
+        targetTexture.baseTexture.once('error', () => {
+            logger.warn('ui.texture_error', `Failed to load texture: ${imageUrl}`);
+        });
     }
     
     const mask = new PIXI.Graphics();
