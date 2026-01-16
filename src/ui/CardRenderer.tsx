@@ -62,50 +62,61 @@ export const createCardContainer = (
     container.addChild(txt);
 
   } else if (imageUrl) {
-    // --- 画像表示モード (HTMLImageElement使用による確実な読み込み) ---
+    // --- 画像表示モード ---
     
     // 1. まずは「裏面」画像を取得（フォールバック用）
     const fallbackUrl = getBackImageUrl('MAIN');
     const fallbackTexture = PIXI.Texture.from(fallbackUrl);
     
     // 2. スプライトを作成（最初は裏面を表示しておく）
-    // これにより読み込み中も「カードがあること」は視認できる
     const sprite = new PIXI.Sprite(fallbackTexture);
     sprite.width = cw;
     sprite.height = ch;
     sprite.anchor.set(0.5);
 
-    // 3. 本命の画像を Image オブジェクトで読み込む
-    // PIXI.Assets.load ではなく標準の Image を使うことで、ブラウザキャッシュと挙動を一致させる
+    // 3. 本命の画像を読み込み
     if (imageUrl !== fallbackUrl) {
-      // 既にPIXIキャッシュにあればそれを使う
+      // PIXIのキャッシュにあれば即座に使用
       const cachedTexture = PIXI.utils.TextureCache[imageUrl];
       
       if (cachedTexture && cachedTexture.valid) {
         sprite.texture = cachedTexture;
+        sprite.width = cw;
+        sprite.height = ch;
       } else {
+        // 新規読み込み (Imageオブジェクトを使用)
         const img = new Image();
-        img.crossOrigin = "anonymous"; // CORS対応
-        img.src = imageUrl;
+        img.crossOrigin = "anonymous"; // WebGLで画像を使うために必須
 
+        // ★修正点: srcへの代入前にハンドラを設定する
         img.onload = () => {
-          // 読み込み完了後にテクスチャ化
           const texture = PIXI.Texture.from(img);
-          // キャッシュ登録（次回以降のためにURLキーで登録しておく）
           PIXI.Texture.addToCache(texture, imageUrl!);
           
           if (!sprite.destroyed) {
             sprite.texture = texture;
-            sprite.width = cw; // テクスチャ変更後にサイズ再設定
+            // テクスチャ変更後にサイズを再設定しないと崩れる場合がある
+            sprite.width = cw;
             sprite.height = ch;
           }
         };
 
-        // ▼ 修正: 引数 'e' を削除してエラーを解消
-        img.onerror = () => {
-          console.warn(`[CardRenderer] Failed to load image: ${imageUrl}`);
-          // 失敗時は裏面のまま維持
+        img.onerror = (e) => {
+          // CORSエラーなどが起きた場合はここに来る
+          logger.warn('ui.image_load_error', `Failed to load image: ${imageUrl}`);
         };
+
+        // ハンドラ設定後に読み込み開始（キャッシュ対策）
+        img.src = imageUrl;
+        
+        // 念のため、既にcompleteしている場合（超高速キャッシュヒット時）のケア
+        if (img.complete && img.naturalWidth > 0) {
+             const texture = PIXI.Texture.from(img);
+             PIXI.Texture.addToCache(texture, imageUrl!);
+             sprite.texture = texture;
+             sprite.width = cw;
+             sprite.height = ch;
+        }
       }
     }
     
@@ -118,7 +129,6 @@ export const createCardContainer = (
     container.addChild(sprite);
     container.addChild(mask);
 
-    // 枠線
     const border = new PIXI.Graphics();
     border.lineStyle(SHAPE.STROKE_WIDTH_ZONE, COLORS.ZONE_BORDER);
     border.drawRoundedRect(-cw / 2, -ch / 2, cw, ch, SHAPE.CORNER_RADIUS_CARD);
@@ -139,7 +149,6 @@ export const createCardContainer = (
   // テキスト追加ヘルパー
   const addText = (content: string, style: any, x: number, y: number, rotationMode: 'screen' | 'card' | number = 'screen') => {
     const txt = new PIXI.Text(content, style);
-    // 画像がある場合は視認性確保のためアウトラインをつける
     if (!isBack && imageUrl) {
       style.stroke = '#000000';
       style.strokeThickness = 3;
@@ -216,23 +225,22 @@ export const createCardContainer = (
 
     // カード名テキスト
     if (!imageUrl) {
-      const nameStyle = { 
-        fontSize: isResource ? SIZES.FONT_NAME_RESOURCE : SIZES.FONT_NAME_NORMAL, 
-        fontWeight: 'bold', 
-        fill: isResource ? COLORS.TEXT_RESOURCE : COLORS.TEXT_DEFAULT 
-      };
-
-      if (isResource) {
-        addText(cardName, nameStyle, 0, 0, 'screen');
-      } else {
-        if (isRest) {
-          const posX = cw / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
-          addText(cardName, nameStyle, posX, 0, 'screen'); 
+        const nameStyle = { 
+            fontSize: isResource ? SIZES.FONT_NAME_RESOURCE : SIZES.FONT_NAME_NORMAL, 
+            fontWeight: 'bold', 
+            fill: isResource ? COLORS.TEXT_RESOURCE : COLORS.TEXT_DEFAULT 
+        };
+        if (isResource) {
+            addText(cardName, nameStyle, 0, 0, 'screen');
         } else {
-          const posY = ch / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
-          addText(cardName, nameStyle, 0, posY, 'screen');
+            if (isRest) {
+                const posX = cw / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
+                addText(cardName, nameStyle, posX, 0, 'screen'); 
+            } else {
+                const posY = ch / 2 + UI_DETAILS.CARD_TEXT_PADDING_Y;
+                addText(cardName, nameStyle, 0, posY, 'screen');
+            }
         }
-      }
     }
 
   } else {
