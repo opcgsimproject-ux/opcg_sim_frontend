@@ -77,6 +77,7 @@ export const createCardContainer = (
     // 3. 本命の画像を読み込み
     if (imageUrl !== fallbackUrl) {
       // PIXIのキャッシュにあれば即座に使用
+      // (v7では PIXI.utils.TextureCache が実体)
       const cachedTexture = PIXI.utils.TextureCache[imageUrl];
       
       if (cachedTexture && cachedTexture.valid) {
@@ -88,31 +89,34 @@ export const createCardContainer = (
         const img = new Image();
         img.crossOrigin = "anonymous"; // WebGLで画像を使うために必須
 
-        // ★修正点: srcへの代入前にハンドラを設定する
         img.onload = () => {
           const texture = PIXI.Texture.from(img);
-          PIXI.Texture.addToCache(texture, imageUrl!);
+          
+          // ▼ 修正: PIXI.Texture.addToCache は存在しないため、直接キャッシュ配列に登録
+          if (imageUrl) {
+             (PIXI.utils.TextureCache as any)[imageUrl] = texture;
+          }
           
           if (!sprite.destroyed) {
             sprite.texture = texture;
-            // テクスチャ変更後にサイズを再設定しないと崩れる場合がある
             sprite.width = cw;
             sprite.height = ch;
           }
         };
 
         img.onerror = (e) => {
-          // CORSエラーなどが起きた場合はここに来る
           logger.warn('ui.image_load_error', `Failed to load image: ${imageUrl}`);
         };
 
-        // ハンドラ設定後に読み込み開始（キャッシュ対策）
+        // ハンドラ設定後に読み込み開始
         img.src = imageUrl;
         
-        // 念のため、既にcompleteしている場合（超高速キャッシュヒット時）のケア
+        // キャッシュヒット時のケア
         if (img.complete && img.naturalWidth > 0) {
              const texture = PIXI.Texture.from(img);
-             PIXI.Texture.addToCache(texture, imageUrl!);
+             if (imageUrl) {
+                (PIXI.utils.TextureCache as any)[imageUrl] = texture;
+             }
              sprite.texture = texture;
              sprite.width = cw;
              sprite.height = ch;
