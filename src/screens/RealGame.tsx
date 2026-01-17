@@ -14,6 +14,7 @@ import CONST from '../../shared_constants.json';
 import { logger } from '../utils/logger';
 import type { GameState, CardInstance, PendingRequest } from '../game/types';
 
+
 export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1Deck: string, p2Deck: string, onBack: () => void }) => {
   const pixiContainerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
