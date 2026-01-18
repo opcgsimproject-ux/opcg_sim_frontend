@@ -5,7 +5,9 @@ import { SandboxGame } from './screens/SandboxGame';
 import GameStart from './ui/GameStart';
 import { DeckBuilder } from './screens/DeckBuilder';
 import { RoomLobby } from './screens/RoomLobby';
-import { DeckSelectModal, DeckOption } from './ui/DeckSelectModal';
+// ▼▼▼ 修正箇所: DeckOption を削除しました ▼▼▼
+import { DeckSelectModal } from './ui/DeckSelectModal';
+// ▲▲▲ 修正箇所 ▲▲▲
 import { API_CONFIG } from './api/api.config';
 
 interface Props {
@@ -67,7 +69,7 @@ export default function App() {
   const [showDeckSelect, setShowDeckSelect] = useState<'p1' | 'p2' | null>(null);
   const [pendingGameStart, setPendingGameStart] = useState<{ mode: 'normal' | 'sandbox', options?: any } | null>(null);
 
-  // デッキ読み込みとマージ処理（重複排除のキモ）
+  // デッキ読み込みとマージ処理
   const loadDecks = useCallback(async () => {
     let serverDecks: any[] = [];
     try {
@@ -82,26 +84,19 @@ export default function App() {
 
     const localDecks = getLocalDecks();
 
-    // ★重要: IDによる重複排除ロジック
-    // サーバーのデッキをベースにする
+    // IDによる重複排除ロジック
     const merged = [...serverDecks];
     const serverIds = new Set(serverDecks.map(d => d.id));
 
     localDecks.forEach(ld => {
-      // サーバーに存在しないID（local-XXX など）のみ追加する
-      // これにより「サーバーにあるのにローカルキャッシュも表示される」を防ぐ
       if (!ld.id || !serverIds.has(ld.id)) {
         merged.push(ld);
       }
     });
 
-    // 日付順などでソートしたい場合はここで行う
-    // merged.sort(...)
-
     setAvailableDecks(merged);
   }, []);
 
-  // アプリ起動時にデッキ一覧を裏で読み込んでおく
   useEffect(() => {
     loadDecks();
   }, [loadDecks]);
@@ -109,10 +104,9 @@ export default function App() {
   const handleStart = (p1: string, p2: string, gameMode: 'normal' | 'sandbox' = 'normal', sbOptions?: any) => {
     // デッキが指定されていない場合、デッキ選択フローを開始する
     if (!p1 || !p2) {
-      // 再度最新リストを取得
       loadDecks(); 
       setPendingGameStart({ mode: gameMode, options: sbOptions });
-      setShowDeckSelect('p1'); // まずP1から選択
+      setShowDeckSelect('p1');
       return;
     }
 
@@ -128,15 +122,12 @@ export default function App() {
   const handleDeckSelect = (deckId: string) => {
     if (showDeckSelect === 'p1') {
       setSelectedDecks(prev => ({ ...prev, p1: deckId }));
-      // P1を選んだら次はP2選択へ（CPU戦や1人回しの場合はここで分岐も可能）
-      // 今回はシンプルにP2選択へ進む
       setShowDeckSelect('p2');
     } else if (showDeckSelect === 'p2') {
       const p1Deck = selectedDecks.p1;
       const p2Deck = deckId;
       setShowDeckSelect(null);
       
-      // 選択完了、ゲーム開始
       if (pendingGameStart) {
         handleStart(p1Deck, p2Deck, pendingGameStart.mode, pendingGameStart.options);
         setPendingGameStart(null);
@@ -168,7 +159,6 @@ export default function App() {
           <RoomLobby onBack={() => setMode('start')} onJoin={(gameId) => handleStart(selectedDecks.p1, selectedDecks.p2, 'sandbox', { role: 'p2', gameId })} />
         )}
 
-        {/* デッキ選択モーダルの表示 */}
         {showDeckSelect && (
           <DeckSelectModal
             title={showDeckSelect === 'p1' ? "Player 1 Deck Select" : "Player 2 Deck Select"}
