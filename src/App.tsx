@@ -1,14 +1,10 @@
-import { Component, useState, useEffect, useCallback } from 'react';
+import { Component, useState } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { RealGame } from './screens/RealGame';
 import { SandboxGame } from './screens/SandboxGame';
 import GameStart from './ui/GameStart';
 import { DeckBuilder } from './screens/DeckBuilder';
 import { RoomLobby } from './screens/RoomLobby';
-// ▼▼▼ 修正箇所: DeckOption を削除しました ▼▼▼
-import { DeckSelectModal } from './ui/DeckSelectModal';
-// ▲▲▲ 修正箇所 ▲▲▲
-import { API_CONFIG } from './api/api.config';
 
 interface Props {
   children: ReactNode;
@@ -48,90 +44,19 @@ class ErrorBoundary extends Component<Props, State> {
   }
 }
 
-// ローカルデッキ取得関数
-const getLocalDecks = (): any[] => {
-  try {
-    const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
-    return ids.map((id: string) => {
-      const data = localStorage.getItem(`opcg_deck_${id}`);
-      return data ? JSON.parse(data) : null;
-    }).filter((d: any) => d !== null);
-  } catch (e) { return []; }
-};
-
 export default function App() {
   const [mode, setMode] = useState<'start' | 'game' | 'deck' | 'sandbox' | 'cardList' | 'lobby'>('start');
   const [selectedDecks, setSelectedDecks] = useState<{ p1: string; p2: string }>({ p1: 'imu.json', p2: 'nami.json' });
   const [sandboxOptions, setSandboxOptions] = useState<{ role: 'both' | 'p1' | 'p2', gameId?: string, room_name?: string }>({ role: 'both' });
 
-  // デッキ選択用State
-  const [availableDecks, setAvailableDecks] = useState<any[]>([]);
-  const [showDeckSelect, setShowDeckSelect] = useState<'p1' | 'p2' | null>(null);
-  const [pendingGameStart, setPendingGameStart] = useState<{ mode: 'normal' | 'sandbox', options?: any } | null>(null);
-
-  // デッキ読み込みとマージ処理
-  const loadDecks = useCallback(async () => {
-    let serverDecks: any[] = [];
-    try {
-      const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.decks)) {
-        serverDecks = data.decks;
-      }
-    } catch (e) {
-      console.error("Failed to load server decks", e);
-    }
-
-    const localDecks = getLocalDecks();
-
-    // IDによる重複排除ロジック
-    const merged = [...serverDecks];
-    const serverIds = new Set(serverDecks.map(d => d.id));
-
-    localDecks.forEach(ld => {
-      if (!ld.id || !serverIds.has(ld.id)) {
-        merged.push(ld);
-      }
-    });
-
-    setAvailableDecks(merged);
-  }, []);
-
-  useEffect(() => {
-    loadDecks();
-  }, [loadDecks]);
-
   const handleStart = (p1: string, p2: string, gameMode: 'normal' | 'sandbox' = 'normal', sbOptions?: any) => {
-    // デッキが指定されていない場合、デッキ選択フローを開始する
-    if (!p1 || !p2) {
-      loadDecks(); 
-      setPendingGameStart({ mode: gameMode, options: sbOptions });
-      setShowDeckSelect('p1');
-      return;
-    }
-
+    // デッキIDが渡されてくる前提で処理する
     setSelectedDecks({ p1, p2 });
     if (gameMode === 'sandbox') {
         setSandboxOptions(sbOptions || { role: 'both' });
         setMode('sandbox');
     } else {
         setMode('game');
-    }
-  };
-
-  const handleDeckSelect = (deckId: string) => {
-    if (showDeckSelect === 'p1') {
-      setSelectedDecks(prev => ({ ...prev, p1: deckId }));
-      setShowDeckSelect('p2');
-    } else if (showDeckSelect === 'p2') {
-      const p1Deck = selectedDecks.p1;
-      const p2Deck = deckId;
-      setShowDeckSelect(null);
-      
-      if (pendingGameStart) {
-        handleStart(p1Deck, p2Deck, pendingGameStart.mode, pendingGameStart.options);
-        setPendingGameStart(null);
-      }
     }
   };
 
@@ -157,19 +82,6 @@ export default function App() {
         )}
         {mode === 'lobby' && (
           <RoomLobby onBack={() => setMode('start')} onJoin={(gameId) => handleStart(selectedDecks.p1, selectedDecks.p2, 'sandbox', { role: 'p2', gameId })} />
-        )}
-
-        {showDeckSelect && (
-          <DeckSelectModal
-            title={showDeckSelect === 'p1' ? "Player 1 Deck Select" : "Player 2 Deck Select"}
-            options={availableDecks.map(d => ({
-              id: d.id,
-              name: d.name,
-              leaderId: d.leader_id
-            }))}
-            onSelect={handleDeckSelect}
-            onClose={() => setShowDeckSelect(null)}
-          />
         )}
       </ErrorBoundary>
     </div>
