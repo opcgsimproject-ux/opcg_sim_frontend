@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 're
 import { API_CONFIG } from '../api/api.config';
 import './GameUI.css'; 
 import { prefetchAllCardImages } from '../utils/imageAssets';
+import { logger } from '../utils/logger'; // 追加
 
 interface GameStartProps {
   onStart: (
@@ -47,6 +48,24 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       }
     }
   }, [windowSize, isMobile]);
+
+  // 追加: ゲーム開始アクションのログ付きラッパー
+  const handleStartWithLog = (
+    mode: 'normal' | 'sandbox',
+    sandboxOptions?: { role: 'both' | 'p1' | 'p2', room_name?: string }
+  ) => {
+    logger.log({
+      level: 'info',
+      action: 'game_menu.select',
+      msg: `Menu selected: ${mode}`,
+      payload: { 
+        mode, 
+        role: sandboxOptions?.role,
+        room: sandboxOptions?.room_name
+      }
+    });
+    onStart('', '', mode, sandboxOptions);
+  };
 
   const handleCacheImages = async () => {
     if (!confirm("全てのカード画像をダウンロードしますか？\n(初回のみ通信量が発生します。Wi-Fi推奨)")) return;
@@ -138,7 +157,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       color: '#f1c40f', fontSize: '24px', fontWeight: 'bold', textAlign: 'center' as const,
       borderBottom: '1px solid #7f8c8d', paddingBottom: '10px', marginBottom: '10px'
     },
-    // ▼ 変更: boxSizingを追加して幅のはみ出しを防止
     select: {
       width: '100%', padding: '12px', background: '#2a1a1a', color: '#f0e6d2',
       border: '1px solid #5d4037', borderRadius: '4px', fontSize: '16px', marginTop: '5px',
@@ -156,6 +174,8 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     <div 
       style={styles.menuCard(color)}
       onClick={onClick}
+      role="button" // 追加: アクセシビリティ
+      tabIndex={0}  // 追加
       className="hover-scale"
       onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
       onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
@@ -182,19 +202,19 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Deck & Cards</div>
             <div style={styles.grid}>
-              <MenuCard label="デッキ作成 / 一覧" desc="Deck Builder" onClick={onDeckBuilder} color="#3498db" />
-              <MenuCard label="カードリスト" desc="Card Catalog" onClick={onCardList} color="#e67e22" />
+              <MenuCard label="デッキ作成 / 一覧" desc="Deck Builder" onClick={() => { logger.log({level:'info', action:'menu.deck_builder'}); onDeckBuilder(); }} color="#3498db" />
+              <MenuCard label="カードリスト" desc="Card Catalog" onClick={() => { logger.log({level:'info', action:'menu.card_list'}); onCardList(); }} color="#e67e22" />
             </div>
           </div>
 
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Simulation</div>
             <div style={styles.grid}>
-              {/* ▼ 変更: クリックで即座に開始 */}
+              {/* 変更: ログ付きのラッパー関数を使用 */}
               <MenuCard 
                 label="1人回しモード" 
                 desc="Solo Sandbox Mode" 
-                onClick={() => onStart('', '', 'sandbox', { role: 'both' })} 
+                onClick={() => handleStartWithLog('sandbox', { role: 'both' })} 
                 color="#2ecc71" 
               />
               <MenuCard 
@@ -203,11 +223,10 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
                 onClick={() => setActiveModal('multi')} 
                 color="#9b59b6" 
               />
-              {/* ▼ 変更: クリックで即座に開始 */}
               <MenuCard 
                 label="自動モード" 
                 desc="VS CPU (Rule Enforced)" 
-                onClick={() => onStart('', '', 'normal')} 
+                onClick={() => handleStartWithLog('normal')} 
                 color="#e74c3c" 
               />
             </div>
@@ -231,12 +250,12 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
                 autoFocus
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' && roomName.trim()) {
-                        onStart('', '', 'sandbox', { role: 'p1', room_name: roomName });
+                        handleStartWithLog('sandbox', { role: 'p1', room_name: roomName });
                     }
                 }}
               />
               <button 
-                onClick={() => onStart('', '', 'sandbox', { role: 'p1', room_name: roomName })}
+                onClick={() => handleStartWithLog('sandbox', { role: 'p1', room_name: roomName })}
                 disabled={!roomName.trim()}
                 style={{ ...styles.actionBtn(true), width: '100%', marginTop: '15px', opacity: roomName.trim() ? 1 : 0.5 }}
               >
@@ -246,7 +265,7 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
 
             <div style={{ textAlign: 'center', color: '#95a5a6', fontSize: '12px', margin: '-10px 0' }}>- OR -</div>
 
-            <button onClick={onLobby} style={styles.actionBtn(false)}>
+            <button onClick={() => { logger.log({level:'info', action:'menu.lobby'}); onLobby(); }} style={styles.actionBtn(false)}>
               ロビーで部屋を探す
             </button>
 
