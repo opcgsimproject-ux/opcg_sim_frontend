@@ -49,9 +49,24 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
-interface SandboxGameProps { gameId?: string; myPlayerId?: string; roomName?: string; onBack: () => void; }
+// ▼▼▼ 修正: Props定義に initialP1DeckId, initialP2DeckId を追加 ▼▼▼
+interface SandboxGameProps { 
+  gameId?: string; 
+  myPlayerId?: string; 
+  roomName?: string; 
+  onBack: () => void;
+  initialP1DeckId?: string;
+  initialP2DeckId?: string;
+}
 
-export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomName, onBack }: SandboxGameProps) => {
+export const SandboxGame = ({ 
+  gameId: initialGameId, 
+  myPlayerId = 'both', 
+  roomName, 
+  onBack,
+  initialP1DeckId, 
+  initialP2DeckId 
+}: SandboxGameProps) => {
   const pixiContainerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const overlayRef = useRef<InspectOverlayContainer | null>(null);
@@ -166,7 +181,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           const deckData = localStorage.getItem(`opcg_deck_${id}`);
           if (deckData) {
             const parsed = JSON.parse(deckData);
-            // リーダー情報の安全な取得
             let leaderId = parsed.leader_id;
             if (!leaderId && parsed.deck && parsed.deck.leader) {
                const l = Array.isArray(parsed.deck.leader) ? parsed.deck.leader[0] : parsed.deck.leader;
@@ -196,16 +210,27 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     fetchDecks();
   }, []);
 
+  // ▼▼▼ 修正: 初期化ロジックの変更（デッキIDがある場合は準備完了とする） ▼▼▼
   useEffect(() => {
     if (isLocalMode) {
+      const hasInitialDecks = !!(initialP1DeckId && initialP2DeckId);
+
       setGameState({
         game_id: 'local-init',
         room_name: roomName || 'LOCAL',
         status: 'WAITING',
-        ready_states: { p1: false, p2: false },
+        ready_states: { p1: hasInitialDecks, p2: hasInitialDecks },
         players: {
-          p1: { name: '', player_id: 'p1', zones: { hand: [], field: [], life: [], trash: [] } } as any,
-          p2: { name: '', player_id: 'p2', zones: { hand: [], field: [], life: [], trash: [] } } as any
+          p1: { 
+            name: initialP1DeckId || '', 
+            player_id: 'p1', 
+            zones: { hand: [], field: [], life: [], trash: [] } 
+          } as any,
+          p2: { 
+            name: initialP2DeckId || '', 
+            player_id: 'p2', 
+            zones: { hand: [], field: [], life: [], trash: [] } 
+          } as any
         },
         turn_info: { turn_count: 0, active_player_id: 'p1', current_phase: 'SETUP', winner: null }
       });
@@ -238,7 +263,25 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
     };
     initGame();
     return () => { if (ws) ws.close(); };
-  }, [isLocalMode]);
+  }, [isLocalMode, initialP1DeckId, initialP2DeckId]); // 依存配列に追加
+
+  // ▼▼▼ 追加: 自動開始ロジック ▼▼▼
+  const hasAutoStartedRef = useRef(false);
+  useEffect(() => {
+    if (
+      isLocalMode && 
+      gameState && 
+      gameState.status === 'WAITING' && 
+      initialP1DeckId && 
+      initialP2DeckId &&
+      !hasAutoStartedRef.current
+    ) {
+      hasAutoStartedRef.current = true;
+      setTimeout(() => {
+        handleAction('START', {});
+      }, 100);
+    }
+  }, [gameState, isLocalMode, initialP1DeckId, initialP2DeckId]);
 
   useEffect(() => {
     if (!pixiContainerRef.current || (gameState && gameState.status === 'WAITING')) return;
@@ -319,7 +362,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           () => setInspecting(null), 
           (card, startPos) => onCardDown({ global: startPos } as any, card),
           (uuid) => { 
-              // 長押し成立後は何もしない
               if (longPressTriggeredRef.current) return;
               const newSet = new Set(revealedCardIds); 
               if (newSet.has(uuid)) newSet.delete(uuid); else newSet.add(uuid); 
@@ -590,7 +632,6 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
               return finalData;
           };
 
-          // ▼ 追加: データの正規化処理
           const normalizeDeckData = (data: any) => {
             if (!data) return { leader: null, cards: [] };
             let leader = data.leader;
@@ -606,7 +647,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             }
             return {
                 ...data,
-                leader: leader, // 配列からオブジェクトへ変換
+                leader: leader,
                 cards: data.cards || (data.deck ? data.deck.cards : [])
             };
           };
@@ -633,7 +674,10 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
       } catch(e) { console.error(e); alert('アクションエラー'); } finally { setIsPending(false); }
   };
 
-  if (gameState && gameState.status === 'WAITING') {
+  // ▼▼▼ 修正: 待機画面の条件を変更（自動開始待ちの場合は表示しない） ▼▼▼
+  const shouldShowSetupScreen = gameState && gameState.status === 'WAITING' && !(initialP1DeckId && initialP2DeckId);
+
+  if (shouldShowSetupScreen) {
     return (
       <div style={{ width: '100vw', height: '100vh', background: 'radial-gradient(circle at center, #2c3e50 0%, #000000 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box' }}>
         <div style={{ 
@@ -642,12 +686,12 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           boxShadow: '0 10px 30px rgba(0,0,0,0.5)', color: '#ecf0f1'
         }}>
           <h2 style={{ color: '#f1c40f', fontSize: '24px', fontWeight: 'bold', textAlign: 'center', borderBottom: '1px solid #7f8c8d', paddingBottom: '10px', margin: 0 }}>
-            {gameState.room_name || 'GAME SETUP'}
+            {gameState?.room_name || 'GAME SETUP'}
           </h2>
 
           {(['p1', 'p2'] as const).map(pid => {
-            const playerState = gameState.players[pid];
-            const leaderCard = playerState.leader;
+            const playerState = gameState?.players[pid];
+            const leaderCard = playerState?.leader;
             const hasDeck = !!leaderCard;
             
             return (
@@ -656,7 +700,7 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                   <label style={{ color: '#bdc3c7', fontSize: '12px', fontWeight: 'bold' }}>
                     {pid === 'p1' ? 'Player 1' : 'Player 2'}
                   </label>
-                  {gameState.ready_states?.[pid] ? (
+                  {gameState?.ready_states?.[pid] ? (
                     <span style={{ color: '#2ecc71', fontSize: '10px', fontWeight: 'bold' }}>READY</span>
                   ) : (
                     <span style={{ color: '#e74c3c', fontSize: '10px' }}>NOT READY</span>
@@ -693,11 +737,11 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
                       disabled={!hasDeck}
                       style={{ 
                         width: '80px', height: '60px',
-                        background: gameState.ready_states?.[pid] ? '#2ecc71' : (hasDeck ? '#e67e22' : '#555'), 
+                        background: gameState?.ready_states?.[pid] ? '#2ecc71' : (hasDeck ? '#e67e22' : '#555'), 
                         color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: hasDeck ? 'pointer' : 'not-allowed'
                       }}
                     >
-                      {gameState.ready_states?.[pid] ? 'OK' : 'SET'}
+                      {gameState?.ready_states?.[pid] ? 'OK' : 'SET'}
                     </button>
                   </div>
                 ) : (
@@ -717,13 +761,13 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
             </button>
             {(myPlayerId === 'p1' || myPlayerId === 'both') && (
               <button 
-                disabled={!(gameState.ready_states?.p1 && gameState.ready_states?.p2)} 
+                disabled={!(gameState?.ready_states?.p1 && gameState?.ready_states?.p2)} 
                 onClick={() => handleAction('START', {})} 
                 style={{ 
                   flex: 1, padding: '12px', 
-                  background: (gameState.ready_states?.p1 && gameState.ready_states?.p2) ? '#e67e22' : '#34495e', 
+                  background: (gameState?.ready_states?.p1 && gameState?.ready_states?.p2) ? '#e67e22' : '#34495e', 
                   color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', 
-                  cursor: (gameState.ready_states?.p1 && gameState.ready_states?.p2) ? 'pointer' : 'not-allowed'
+                  cursor: (gameState?.ready_states?.p1 && gameState?.ready_states?.p2) ? 'pointer' : 'not-allowed'
                 }}
               >
                 GAME START
@@ -762,7 +806,12 @@ export const SandboxGame = ({ gameId: initialGameId, myPlayerId = 'both', roomNa
           </div>
         </div>
       )}
-      {!gameState && <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', color: 'white' }}><h2>Loading...</h2></div>}
+      {/* 修正: 待機画面を表示しない場合（自動開始中）でもLoadingを出すように調整 */}
+      {(!gameState || (gameState.status === 'WAITING' && initialP1DeckId && initialP2DeckId)) && (
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', color: 'white' }}>
+          <h2>Loading...</h2>
+        </div>
+      )}
       {selectedCard && <CardDetailSheet card={selectedCard} location="unknown" isMyTurn={false} onAction={async () => {}} onClose={() => setSelectedCard(null)} />}
       
       {replacementState && gameState && (
