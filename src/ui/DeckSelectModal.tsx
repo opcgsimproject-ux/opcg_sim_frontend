@@ -1,13 +1,11 @@
 import React from 'react';
 import { getCardImageUrl } from '../utils/imageAssets';
-import { logger } from '../utils/logger'; // 追加
+import { logger } from '../utils/logger';
 
 export interface DeckOption {
   id: string;
   name: string;
   leaderId?: string;
-  // デッキ枚数などが渡ってくる可能性がある場合はここに追加定義しますが、
-  // 現状の呼び出し元に依存するため、最低限のフィールドでログを出力します。
 }
 
 interface DeckSelectModalProps {
@@ -19,7 +17,6 @@ interface DeckSelectModalProps {
 
 export const DeckSelectModal: React.FC<DeckSelectModalProps> = ({ title, options, onSelect, onClose }) => {
   
-  // 追加: デッキ選択時のログ処理ラッパー
   const handleDeckClick = (deck: DeckOption) => {
     logger.log({
       level: 'info',
@@ -49,19 +46,18 @@ export const DeckSelectModal: React.FC<DeckSelectModalProps> = ({ title, options
           {options.map(opt => (
             <div 
               key={opt.id} 
-              onClick={() => handleDeckClick(opt)} // 変更: ログ出力関数経由にする
-              role="button"        // 追加: Android/アクセシビリティ対策
-              tabIndex={0}         // 追加: フォーカス可能にする
+              onClick={() => handleDeckClick(opt)}
+              role="button"
+              tabIndex={0}
               style={{ 
                 display: 'flex', alignItems: 'center',
                 background: '#333', borderRadius: '8px', cursor: 'pointer', border: '1px solid #555',
                 padding: '10px', minHeight: '80px', transition: 'background 0.2s',
-                touchAction: 'manipulation' // 追加: ダブルタップ拡大などの遅延防止
+                touchAction: 'manipulation'
               }}
               className="hover-scale"
               onMouseOver={(e) => e.currentTarget.style.background = '#444'}
               onMouseOut={(e) => e.currentTarget.style.background = '#333'}
-              // 追加: Enterキーでも選択可能にする（キーボード操作対応）
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
@@ -77,10 +73,18 @@ export const DeckSelectModal: React.FC<DeckSelectModalProps> = ({ title, options
                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: '10px' }}>No Img</div>
                 )}
               </div>
-              {/* 右側: デッキ名 */}
-              <div style={{ flex: 1, color: '#fff', fontWeight: 'bold', fontSize: '16px' }}>
-                {opt.name}
+              
+              {/* 右側: デッキ情報 */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '16px' }}>
+                  {opt.name}
+                </div>
+                {/* ▼▼▼ 追加: ID表示 ▼▼▼ */}
+                <div style={{ color: '#aaa', fontSize: '12px', marginTop: '4px', fontFamily: 'monospace' }}>
+                  ID: {opt.id}
+                </div>
               </div>
+
               {/* 矢印アイコン */}
               <div style={{ color: '#666', fontSize: '20px', marginLeft: '10px' }}>›</div>
             </div>
