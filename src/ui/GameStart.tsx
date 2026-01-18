@@ -17,7 +17,6 @@ interface GameStartProps {
   onLobby: () => void;
 }
 
-// ローカルデッキ取得ヘルパー
 const getLocalDecks = (): any[] => {
   try {
     const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
@@ -70,7 +69,7 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     }
   }, [windowSize, isMobile]);
 
-  // デッキ一覧のロードとマージ
+  // デッキ一覧ロード＆マージ
   const loadDecks = useCallback(async () => {
     let serverDecks: any[] = [];
     try {
@@ -88,7 +87,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     const serverIds = new Set(serverDecks.map(d => d.id));
 
     localDecks.forEach(ld => {
-      // サーバーにないID(local-XXX等)のみ追加
       if (!ld.id || !serverIds.has(ld.id)) {
         merged.push(ld);
       }
@@ -96,7 +94,7 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     setAvailableDecks(merged);
   }, []);
 
-  // ゲーム開始フローのトリガー
+  // 開始フロー
   const handleStartWithLog = async (
     mode: 'normal' | 'sandbox',
     sandboxOptions?: { role: 'both' | 'p1' | 'p2', room_name?: string }
@@ -108,23 +106,17 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       payload: { mode, role: sandboxOptions?.role, room: sandboxOptions?.room_name }
     });
 
-    // デッキ一覧を最新化
     await loadDecks();
-
-    // 開始設定を一時保存し、P1デッキ選択モーダルを開く
     setPendingStartConfig({ mode, options: sandboxOptions });
     setShowDeckSelect('p1');
   };
 
-  // デッキ選択処理
   const handleDeckSelect = (deckId: string) => {
     if (showDeckSelect === 'p1') {
       setSelectedP1(deckId);
       setShowDeckSelect('p2');
     } else if (showDeckSelect === 'p2') {
       setShowDeckSelect(null);
-      
-      // 選択完了したら親(App)へ通知してゲーム開始
       if (pendingStartConfig) {
         onStart(selectedP1, deckId, pendingStartConfig.mode, pendingStartConfig.options);
         setPendingStartConfig(null);
@@ -362,7 +354,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
         </div>
       )}
 
-      {/* デッキ選択モーダルの表示 */}
       {showDeckSelect && (
         <DeckSelectModal
           title={showDeckSelect === 'p1' ? "Player 1 デッキ選択" : "Player 2 デッキ選択"}
