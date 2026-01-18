@@ -855,52 +855,52 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
   };
 
   const handleDeleteDeck = async (deckId: string) => {
-    // 【ログ 1】IDを確認
-    console.log(`[Delete] 削除開始: ID=${deckId}, StartsWithLocal=${deckId.startsWith('local-')}`);
+    // 【ログ】削除プロセス開始
+    console.log(`[Delete] 削除開始: ID=${deckId}`);
 
-    if (!confirm('本当にこのデッキを削除しますか？\n（サーバー上のデータも削除されます）')) return;
+    if (!confirm('本当にこのデッキを削除しますか？')) return;
 
+    // 1. まずサーバーからの削除を試みる (IDの形式に関わらず常に実行)
     try {
-      // IDが "local-" で始まらない場合は、サーバー上のデッキなのでAPIを叩いて削除する
-      if (!deckId.startsWith('local-')) {
-          // 【ログ 2】サーバー通信ルートに入ったことを確認
-          console.log(`[Delete] サーバー削除API呼び出し開始: ${API_CONFIG.BASE_URL}/api/deck/${deckId}`);
-          
-          const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/${deckId}`, { 
-              method: 'DELETE' 
-          });
-          
-          // 【ログ 3】通信結果を確認
-          console.log(`[Delete] APIレスポンス: Status=${res.status}`);
-
-          if (!res.ok) {
-              throw new Error(`Server returned ${res.status}`);
-          }
-
-          const data = await res.json();
-          if (!data.success) {
-              throw new Error(data.error || 'Server delete failed');
-          }
+      console.log(`[Delete] サーバー削除API呼び出し: ${API_CONFIG.BASE_URL}/api/deck/${deckId}`);
+      
+      const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/${deckId}`, { 
+          method: 'DELETE' 
+      });
+      
+      console.log(`[Delete] APIレスポンス: Status=${res.status}`);
+      
+      // サーバーにファイルがなくても(404等)、あるいは削除成功(200)でも
+      // クライアント側では「削除完了」として振る舞うため、エラーはスローせずログのみ残す
+      if (!res.ok) {
+        console.warn(`[Delete] サーバー上の削除に失敗しましたが、ローカル削除を続行します。Status: ${res.status}`);
       } else {
-          // 【ログ 4】ローカルのみのルート
-          console.log('[Delete] ローカルデッキのため通信スキップ');
+        const data = await res.json();
+        if (!data.success) {
+           console.warn(`[Delete] サーバーからエラーが返されました: ${data.error}`);
+        }
       }
+    } catch (e) {
+      // ネットワークエラー等が起きても、ローカルからは消せるように処理を続行する
+      console.error('[Delete] サーバー通信エラー (オフラインの可能性があります):', e);
+    }
 
-      // サーバー削除成功、またはローカルのみの場合、ローカルストレージも削除
+    // 2. ローカルストレージと画面からの削除 (必ず実行)
+    try {
       localStorage.removeItem(`opcg_deck_${deckId}`);
       
       const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
       const newIds = ids.filter((id: string) => id !== deckId);
       localStorage.setItem('opcg_local_deck_ids', JSON.stringify(newIds));
       
+      // 画面のリストから除外
       setDecks(prev => prev.filter(d => d.id !== deckId));
       
-      console.log('[Delete] 削除完了');
+      console.log('[Delete] 削除処理完了');
       alert('削除しました');
-      
     } catch (e) {
       console.error(e);
-      alert(`削除中にエラーが発生しました: ${e instanceof Error ? e.message : String(e)}`);
+      alert('ローカルデータの削除中にエラーが発生しました');
     }
   };
 
