@@ -481,7 +481,6 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
   const [inputText, setInputText] = useState('');
 
   const [showFilterModal, setShowFilterModal] = useState(false);
-  // ▼ 変更: 初期表示枚数を100に変更
   const [displayLimit, setDisplayLimit] = useState(100);
   const [viewingCard, setViewingCard] = useState<CardData | null>(null);
 
@@ -582,7 +581,6 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
   }, [allCards, filters, mode, searchText, currentDeck.leader_id, viewOnly]);
 
   useEffect(() => { 
-    // ▼ 変更: フィルタ変更時も100枚にリセット
     setDisplayLimit(100); 
   }, [filters, mode, searchText]);
 
@@ -609,7 +607,6 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    // ▼ 変更: スクロールマージンを300pxに拡大し、追加読み込みを100枚単位に変更
     if (scrollHeight - scrollTop <= clientHeight + 300) {
       if (displayLimit < filtered.length) setDisplayLimit(prev => prev + 100);
     }
@@ -773,52 +770,75 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
 
   const handleSaveDeck = async () => {
     if (!currentDeck) return;
-    const tempId = currentDeck.id || `local-${Date.now()}`;
-    const deckToSave = { ...currentDeck, id: tempId };
-    const leaderCard = allCards.find(c => c.uuid === deckToSave.leader_id);
-    const cardObjects = deckToSave.card_uuids.map(uuid => allCards.find(c => c.uuid === uuid)).filter(Boolean);
-    const sandboxFormat = {
-      deck: { 
-        leader: leaderCard ? [leaderCard] : [],
-        cards: cardObjects
-      },
-      ...deckToSave
-    };
+
+    // 既存のIDがローカル一時IDなら、サーバーには新規作成として送るためIDを消す
+    const deckData = { ...currentDeck };
+    const oldId = deckData.id;
+    if (oldId && oldId.startsWith('local-')) {
+        delete deckData.id;
+    }
 
     try {
-      localStorage.setItem(`opcg_deck_${tempId}`, JSON.stringify(sandboxFormat));
-      const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
-      if (!ids.includes(tempId)) {
-        localStorage.setItem('opcg_local_deck_ids', JSON.stringify([...ids, tempId]));
-      }
-      setDecks(prev => {
-        const exists = prev.find(d => d.id === tempId);
-        return exists ? prev.map(d => d.id === tempId ? deckToSave : d) : [...prev, deckToSave];
-      });
-    } catch (e) { alert('容量不足'); return; }
-
-    try {
+      // APIコールを先行
       const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck`, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deckToSave) 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(deckData) 
       });
       const data = await res.json();
+
       if (data.success) {
          const serverId = data.deck_id;
-         const serverDeck = { ...deckToSave, id: serverId };
-         const serverSandboxFormat = { ...sandboxFormat, ...serverDeck, deck: sandboxFormat.deck };
-         localStorage.setItem(`opcg_deck_${serverId}`, JSON.stringify(serverSandboxFormat));
-         if (tempId !== serverId) {
-           localStorage.removeItem(`opcg_deck_${tempId}`);
-           const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
-           localStorage.setItem('opcg_local_deck_ids', JSON.stringify(ids.filter((id: string) => id !== tempId)));
+         const finalDeck = { ...deckData, id: serverId }; // サーバーIDを適用
+
+         // ローカルキャッシュ用データ構築
+         const leaderCard = allCards.find(c => c.uuid === finalDeck.leader_id);
+         const cardObjects = finalDeck.card_uuids.map(uuid => allCards.find(c => c.uuid === uuid)).filter(Boolean);
+         const sandboxFormat = {
+            deck: { 
+                leader: leaderCard ? [leaderCard] : [],
+                cards: cardObjects
+            },
+            ...finalDeck
+         };
+
+         // ローカル保存 (キャッシュ)
+         try {
+             localStorage.setItem(`opcg_deck_${serverId}`, JSON.stringify(sandboxFormat));
+             
+             const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
+             if (!ids.includes(serverId)) {
+                localStorage.setItem('opcg_local_deck_ids', JSON.stringify([...ids, serverId]));
+             }
+
+             // 元がローカル一時IDだった場合、古いデータを削除
+             if (oldId && oldId.startsWith('local-')) {
+                localStorage.removeItem(`opcg_deck_${oldId}`);
+                const updatedIds = ids.filter((id: string) => id !== oldId && id !== serverId).concat([serverId]);
+                localStorage.setItem('opcg_local_deck_ids', JSON.stringify(updatedIds));
+             }
+         } catch (e) {
+             console.error("Local cache failed", e);
+             // キャッシュ失敗してもサーバー保存は成功しているので続行
          }
-         setCurrentDeck(serverDeck);
-         alert('保存しました (同期完了)');
-         return;
+
+         // 状態更新
+         setDecks(prev => {
+            // 一覧から古いIDのものを除外し、新しいものを追加 (または更新)
+            const filtered = prev.filter(d => d.id !== oldId && d.id !== serverId);
+            return [finalDeck, ...filtered];
+         });
+         
+         setCurrentDeck(finalDeck);
+         alert('保存しました');
+      } else {
+         logger.error('deck_builder.save', 'Server returned error', { error: data.error });
+         alert(`保存に失敗しました: ${data.error}`);
       }
-    } catch (e) { console.warn('Offline save'); }
-    setCurrentDeck(deckToSave);
-    alert('保存しました (オフライン)');
+    } catch (e) { 
+        logger.error('deck_builder.save', 'Network error', { error: e });
+        alert('サーバー通信エラーが発生しました。保存できません。'); 
+    }
   };
 
   if (mode === 'list') return <DeckListView decks={decks} onSelectDeck={(d) => { setCurrentDeck(d); setMode('edit'); }} onCreateNew={() => { setCurrentDeck({ name: 'New Deck', leader_id: null, card_uuids: [], don_uuids: [] }); setMode('edit'); }} onBack={onBack} />;
