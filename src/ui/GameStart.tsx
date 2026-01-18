@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { API_CONFIG } from '../api/api.config';
 import './GameUI.css'; 
 import { prefetchAllCardImages } from '../utils/imageAssets';
 import { logger } from '../utils/logger';
-import { DeckSelectModal } from './DeckSelectModal';
 
 interface GameStartProps {
   onStart: (
@@ -17,29 +16,10 @@ interface GameStartProps {
   onLobby: () => void;
 }
 
-const getLocalDecks = (): any[] => {
-  try {
-    const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
-    return ids.map((id: string) => {
-      const data = localStorage.getItem(`opcg_deck_${id}`);
-      return data ? JSON.parse(data) : null;
-    }).filter((d: any) => d !== null);
-  } catch (e) { return []; }
-};
-
 const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardList, onLobby }) => {
   const [activeModal, setActiveModal] = useState<'none' | 'multi'>('none');
   const [downloadProgress, setDownloadProgress] = useState<{current: number, total: number} | null>(null);
   const [roomName, setRoomName] = useState('');
-
-  // デッキ選択用State
-  const [showDeckSelect, setShowDeckSelect] = useState<'p1' | 'p2' | null>(null);
-  const [availableDecks, setAvailableDecks] = useState<any[]>([]);
-  const [selectedP1, setSelectedP1] = useState<string>('');
-  const [pendingStartConfig, setPendingStartConfig] = useState<{
-    mode: 'normal' | 'sandbox',
-    options?: any
-  } | null>(null);
 
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [contentScale, setContentScale] = useState(1);
@@ -69,59 +49,8 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     }
   }, [windowSize, isMobile]);
 
-  // デッキ一覧ロード＆マージ（ID重複排除・正規化対応版）
-  const loadDecks = useCallback(async () => {
-    let serverDecks: any[] = [];
-    try {
-      const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.decks)) {
-        serverDecks = data.decks;
-      }
-    } catch (e) {
-      console.error("Failed to load server decks", e);
-    }
-
-    const localDecks = getLocalDecks();
-    
-    // 重複排除用マップ
-    const uniqueDeckMap = new Map();
-    
-    // ヘルパー: IDから "db:" を取り除く関数
-    const normalizeId = (id: string) => {
-      if (!id) return '';
-      return id.startsWith('db:') ? id.substring(3) : id;
-    };
-
-    // 1. サーバーデータを登録 (優先度高)
-    serverDecks.forEach(d => {
-      if (d.id) {
-        // .jsonで終わるファイルベースのデッキはそのまま、それ以外(DB)は正規化して登録
-        // これにより "db:XXX" も "XXX" として登録されます
-        const cleanId = d.id.endsWith('.json') ? d.id : normalizeId(d.id);
-        uniqueDeckMap.set(cleanId, { ...d, id: cleanId });
-      }
-    });
-
-    // 2. ローカルデータをマージ
-    localDecks.forEach(ld => {
-      if (ld.id) {
-        const cleanId = normalizeId(ld.id);
-        
-        // まだマップになければ追加
-        // (サーバーにあるものはサーバー版を優先するため、ここでは上書きしない)
-        if (!uniqueDeckMap.has(cleanId)) {
-          uniqueDeckMap.set(cleanId, { ...ld, id: cleanId });
-        }
-      }
-    });
-
-    const merged = Array.from(uniqueDeckMap.values());
-    setAvailableDecks(merged);
-  }, []);
-
-  // 開始フロー
-  const handleStartWithLog = async (
+  // ▼▼▼ 修正: モーダル表示ロジックを削除し、直接 onStart を呼ぶ形に戻しました ▼▼▼
+  const handleStartWithLog = (
     mode: 'normal' | 'sandbox',
     sandboxOptions?: { role: 'both' | 'p1' | 'p2', room_name?: string }
   ) => {
@@ -131,23 +60,8 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
       msg: `Menu selected: ${mode}`,
       payload: { mode, role: sandboxOptions?.role, room: sandboxOptions?.room_name }
     });
-
-    await loadDecks();
-    setPendingStartConfig({ mode, options: sandboxOptions });
-    setShowDeckSelect('p1');
-  };
-
-  const handleDeckSelect = (deckId: string) => {
-    if (showDeckSelect === 'p1') {
-      setSelectedP1(deckId);
-      setShowDeckSelect('p2');
-    } else if (showDeckSelect === 'p2') {
-      setShowDeckSelect(null);
-      if (pendingStartConfig) {
-        onStart(selectedP1, deckId, pendingStartConfig.mode, pendingStartConfig.options);
-        setPendingStartConfig(null);
-      }
-    }
+    // デッキIDは空文字で渡す（Sandbox側で選択させるため）
+    onStart('', '', mode, sandboxOptions);
   };
 
   const handleCacheImages = async () => {
@@ -309,6 +223,7 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Simulation</div>
             <div style={styles.grid}>
+              {/* ▼▼▼ 修正: handleStartWithLog を呼んで、デッキID空で開始する ▼▼▼ */}
               <MenuCard 
                 label="1人回しモード" 
                 desc="Solo Sandbox Mode" 
@@ -378,22 +293,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
             </button>
           </div>
         </div>
-      )}
-
-      {showDeckSelect && (
-        <DeckSelectModal
-          title={showDeckSelect === 'p1' ? "Player 1 デッキ選択" : "Player 2 デッキ選択"}
-          options={availableDecks.map(d => ({
-            id: d.id,
-            name: d.name,
-            leaderId: d.leader_id
-          }))}
-          onSelect={handleDeckSelect}
-          onClose={() => {
-            setShowDeckSelect(null);
-            setPendingStartConfig(null);
-          }}
-        />
       )}
 
       <style>{`
