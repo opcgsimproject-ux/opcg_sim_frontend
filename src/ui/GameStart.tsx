@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 're
 import { API_CONFIG } from '../api/api.config';
 import './GameUI.css'; 
 import { prefetchAllCardImages } from '../utils/imageAssets';
-import { logger } from '../utils/logger'; // 追加
+import { logger } from '../utils/logger';
 
 interface GameStartProps {
   onStart: (
@@ -49,7 +49,6 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     }
   }, [windowSize, isMobile]);
 
-  // 追加: ゲーム開始アクションのログ付きラッパー
   const handleStartWithLog = (
     mode: 'normal' | 'sandbox',
     sandboxOptions?: { role: 'both' | 'p1' | 'p2', room_name?: string }
@@ -174,8 +173,8 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
     <div 
       style={styles.menuCard(color)}
       onClick={onClick}
-      role="button" // 追加: アクセシビリティ
-      tabIndex={0}  // 追加
+      role="button"
+      tabIndex={0}
       className="hover-scale"
       onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
       onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
@@ -202,15 +201,32 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Deck & Cards</div>
             <div style={styles.grid}>
-              <MenuCard label="デッキ作成 / 一覧" desc="Deck Builder" onClick={() => { logger.log({level:'info', action:'menu.deck_builder'}); onDeckBuilder(); }} color="#3498db" />
-              <MenuCard label="カードリスト" desc="Card Catalog" onClick={() => { logger.log({level:'info', action:'menu.card_list'}); onCardList(); }} color="#e67e22" />
+              <MenuCard 
+                label="デッキ作成 / 一覧" 
+                desc="Deck Builder" 
+                onClick={() => { 
+                  // 修正: msgプロパティを追加
+                  logger.log({level:'info', action:'menu.deck_builder', msg: 'Open DeckBuilder'}); 
+                  onDeckBuilder(); 
+                }} 
+                color="#3498db" 
+              />
+              <MenuCard 
+                label="カードリスト" 
+                desc="Card Catalog" 
+                onClick={() => { 
+                  // 修正: msgプロパティを追加
+                  logger.log({level:'info', action:'menu.card_list', msg: 'Open CardList'}); 
+                  onCardList(); 
+                }} 
+                color="#e67e22" 
+              />
             </div>
           </div>
 
           <div style={styles.section}>
             <div style={styles.sectionTitle}>Simulation</div>
             <div style={styles.grid}>
-              {/* 変更: ログ付きのラッパー関数を使用 */}
               <MenuCard 
                 label="1人回しモード" 
                 desc="Solo Sandbox Mode" 
@@ -265,7 +281,14 @@ const GameStart: React.FC<GameStartProps> = ({ onStart, onDeckBuilder, onCardLis
 
             <div style={{ textAlign: 'center', color: '#95a5a6', fontSize: '12px', margin: '-10px 0' }}>- OR -</div>
 
-            <button onClick={() => { logger.log({level:'info', action:'menu.lobby'}); onLobby(); }} style={styles.actionBtn(false)}>
+            <button 
+              onClick={() => { 
+                // 修正: msgプロパティを追加
+                logger.log({level:'info', action:'menu.lobby', msg: 'Open Lobby'}); 
+                onLobby(); 
+              }} 
+              style={styles.actionBtn(false)}
+            >
               ロビーで部屋を探す
             </button>
 
