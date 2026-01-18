@@ -50,8 +50,12 @@ export default function App() {
   const [sandboxOptions, setSandboxOptions] = useState<{ role: 'both' | 'p1' | 'p2', gameId?: string, room_name?: string }>({ role: 'both' });
 
   const handleStart = (p1: string, p2: string, gameMode: 'normal' | 'sandbox' = 'normal', sbOptions?: any) => {
-    // デッキIDが渡されてくる前提で処理する
-    setSelectedDecks({ p1, p2 });
+    // デッキIDが渡されていなければデフォルトを使用（あるいはGameStart側で制御済みとする）
+    setSelectedDecks({ 
+      p1: p1 || 'imu.json', 
+      p2: p2 || 'nami.json' 
+    });
+    
     if (gameMode === 'sandbox') {
         setSandboxOptions(sbOptions || { role: 'both' });
         setMode('sandbox');
