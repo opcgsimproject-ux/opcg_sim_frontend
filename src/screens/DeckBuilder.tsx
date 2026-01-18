@@ -781,12 +781,13 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
     fetchData();
   }, [mode, viewOnly]);
 
+  // ▼▼▼ 修正: handleSaveDeck に強力なクリーンアップロジックを追加 ▼▼▼
   const handleSaveDeck = async () => {
     if (!currentDeck) return;
     
-    // コピーを作成して、古いIDを確保
+    // 保存対象のデータをコピー
     const deckData = { ...currentDeck };
-    const oldId = deckData.id;
+    const oldId = deckData.id; // 元のID（local-XXX など）
     
     // 一時ID(local-...)の場合は、IDフィールドを削除してサーバーに新規採番させる
     if (oldId && oldId.startsWith('local-')) {
@@ -817,19 +818,25 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
          };
          localStorage.setItem(`opcg_deck_${serverId}`, JSON.stringify(sandboxFormat));
          
-         // IDリストの更新
-         const ids = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
+         // ローカルストレージのIDリストを更新
+         const currentIds = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
          
-         // 新しいIDを追加（まだなければ）
-         let newIds = [...ids];
+         // 1. 古いID（local-）がまだリストにあれば削除する
+         let newIds = currentIds.filter((id: string) => id !== oldId);
+         
+         // 2. 新しいIDを追加（まだなければ）
          if (!newIds.includes(serverId)) {
             newIds.push(serverId);
          }
 
-         // 古いIDが Local Draft だった場合、ストレージとリストから削除
+         // 3. ローカルファイルの物理削除
+         // oldId が local- で、かつ 新しいIDと異なるなら、古いキャッシュファイルを消す
          if (oldId && oldId.startsWith('local-') && oldId !== serverId) {
-            localStorage.removeItem(`opcg_deck_${oldId}`); // ファイル削除
-            newIds = newIds.filter((id: string) => id !== oldId); // リストから除外
+            localStorage.removeItem(`opcg_deck_${oldId}`);
+            
+            // 念のため、サーバー上に万が一ゴミデータとして保存されてしまっていた場合に備えて削除リクエストを送る
+            // （404でも構わないので非同期で投げておく）
+            fetch(`${API_CONFIG.BASE_URL}/api/deck/${oldId}`, { method: 'DELETE' }).catch(() => {});
          }
          
          // IDリストを保存
@@ -853,14 +860,13 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
         alert('サーバー通信エラーが発生しました。保存できません。'); 
     }
   };
+  // ▲▲▲ 修正終わり ▲▲▲
 
   const handleDeleteDeck = async (deckId: string) => {
-    // 【ログ】削除プロセス開始
     console.log(`[Delete] 削除開始: ID=${deckId}`);
 
     if (!confirm('本当にこのデッキを削除しますか？')) return;
 
-    // 1. まずサーバーからの削除を試みる (IDの形式に関わらず常に実行)
     try {
       console.log(`[Delete] サーバー削除API呼び出し: ${API_CONFIG.BASE_URL}/api/deck/${deckId}`);
       
@@ -870,22 +876,13 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
       
       console.log(`[Delete] APIレスポンス: Status=${res.status}`);
       
-      // サーバーにファイルがなくても(404等)、あるいは削除成功(200)でも
-      // クライアント側では「削除完了」として振る舞うため、エラーはスローせずログのみ残す
       if (!res.ok) {
         console.warn(`[Delete] サーバー上の削除に失敗しましたが、ローカル削除を続行します。Status: ${res.status}`);
-      } else {
-        const data = await res.json();
-        if (!data.success) {
-           console.warn(`[Delete] サーバーからエラーが返されました: ${data.error}`);
-        }
       }
     } catch (e) {
-      // ネットワークエラー等が起きても、ローカルからは消せるように処理を続行する
-      console.error('[Delete] サーバー通信エラー (オフラインの可能性があります):', e);
+      console.error('[Delete] サーバー通信エラー:', e);
     }
 
-    // 2. ローカルストレージと画面からの削除 (必ず実行)
     try {
       localStorage.removeItem(`opcg_deck_${deckId}`);
       
@@ -893,7 +890,6 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
       const newIds = ids.filter((id: string) => id !== deckId);
       localStorage.setItem('opcg_local_deck_ids', JSON.stringify(newIds));
       
-      // 画面のリストから除外
       setDecks(prev => prev.filter(d => d.id !== deckId));
       
       console.log('[Delete] 削除処理完了');
