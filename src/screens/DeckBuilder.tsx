@@ -855,15 +855,24 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
   };
 
   const handleDeleteDeck = async (deckId: string) => {
+    // 【ログ 1】IDを確認
+    console.log(`[Delete] 削除開始: ID=${deckId}, StartsWithLocal=${deckId.startsWith('local-')}`);
+
     if (!confirm('本当にこのデッキを削除しますか？\n（サーバー上のデータも削除されます）')) return;
 
     try {
       // IDが "local-" で始まらない場合は、サーバー上のデッキなのでAPIを叩いて削除する
       if (!deckId.startsWith('local-')) {
+          // 【ログ 2】サーバー通信ルートに入ったことを確認
+          console.log(`[Delete] サーバー削除API呼び出し開始: ${API_CONFIG.BASE_URL}/api/deck/${deckId}`);
+          
           const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/${deckId}`, { 
               method: 'DELETE' 
           });
           
+          // 【ログ 3】通信結果を確認
+          console.log(`[Delete] APIレスポンス: Status=${res.status}`);
+
           if (!res.ok) {
               throw new Error(`Server returned ${res.status}`);
           }
@@ -872,6 +881,9 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
           if (!data.success) {
               throw new Error(data.error || 'Server delete failed');
           }
+      } else {
+          // 【ログ 4】ローカルのみのルート
+          console.log('[Delete] ローカルデッキのため通信スキップ');
       }
 
       // サーバー削除成功、またはローカルのみの場合、ローカルストレージも削除
@@ -882,6 +894,8 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
       localStorage.setItem('opcg_local_deck_ids', JSON.stringify(newIds));
       
       setDecks(prev => prev.filter(d => d.id !== deckId));
+      
+      console.log('[Delete] 削除完了');
       alert('削除しました');
       
     } catch (e) {
