@@ -50,16 +50,18 @@ export default function App() {
   const [sandboxOptions, setSandboxOptions] = useState<{ role: 'both' | 'p1' | 'p2', gameId?: string, room_name?: string }>({ role: 'both' });
 
   const handleStart = (p1: string, p2: string, gameMode: 'normal' | 'sandbox' = 'normal', sbOptions?: any) => {
-    // GameStart側で選択済みのデッキIDを受け取る
-    setSelectedDecks({ 
-      p1: p1 || 'imu.json', 
-      p2: p2 || 'nami.json' 
-    });
     
     if (gameMode === 'sandbox') {
+        // ▼▼▼ 修正: Sandboxモードの場合は空文字を許容する（Sandbox側で選択画面を出すため）
+        setSelectedDecks({ p1, p2 });
         setSandboxOptions(sbOptions || { role: 'both' });
         setMode('sandbox');
     } else {
+        // 通常ゲームの場合はデフォルト値をセット
+        setSelectedDecks({ 
+          p1: p1 || 'imu.json', 
+          p2: p2 || 'nami.json' 
+        });
         setMode('game');
     }
   };
@@ -78,9 +80,8 @@ export default function App() {
             myPlayerId={sandboxOptions.role === 'both' ? 'both' : sandboxOptions.role} 
             gameId={sandboxOptions.gameId} 
             roomName={sandboxOptions.room_name} 
-            // ▼ 重要: 選択したデッキ情報をSandboxGameにも渡すように修正する必要があります
-            // p1Deck={selectedDecks.p1} 
-            // p2Deck={selectedDecks.p2}
+            initialP1DeckId={selectedDecks.p1}
+            initialP2DeckId={selectedDecks.p2}
             onBack={() => { if (confirm("終了しますか？")) setMode('start'); }} 
           />
         )}
