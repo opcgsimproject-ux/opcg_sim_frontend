@@ -37,7 +37,29 @@ export const calculateCoordinates = (W: number, H: number): LayoutCoords => {
   
   const CH = Math.min(chByHeight, chByWidth); 
   const CW = CH / P.CARD.ASPECT_RATIO;
-  const V_GAP = CH * P.SPACING.V_GAP_RATIO;
+  
+  // ▼▼▼ 修正: V_GAPの自動調整ロジック ▼▼▼
+  // 通常計算のV_GAP
+  let V_GAP = CH * P.SPACING.V_GAP_RATIO;
+
+  // 4行分（Field, Leader, Don, Hand）のカードと隙間が availHeight に収まるかチェック
+  // 必要な高さ = (カードの高さ * 4行) + (隙間 * 3箇所)
+  const totalHeightNeeded = (CH * 4) + (V_GAP * 3);
+
+  if (totalHeightNeeded > availHeight) {
+    // はみ出す場合、収まるようにV_GAPを逆算して縮小する
+    // V_GAP * 3 <= availHeight - (CH * 4)
+    const remainingSpace = availHeight - (CH * 4);
+    if (remainingSpace > 0) {
+      V_GAP = remainingSpace / 3;
+    } else {
+      // 万が一カード4枚だけで溢れる場合は、隙間を最小限(2px)にするか、0にする
+      V_GAP = 2;
+    }
+    // 念のため負の値にならないようガード
+    V_GAP = Math.max(0, V_GAP);
+  }
+  // ▲▲▲ 修正ここまで ▲▲▲
   
   const validateCoordinate = (val: number, label: string) => {
     if (isNaN(val)) {
