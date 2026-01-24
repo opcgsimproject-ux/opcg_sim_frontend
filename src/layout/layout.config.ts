@@ -82,8 +82,8 @@ export const LAYOUT_PARAMS = {
   // カード・グリッド計算設定
   CARD: {
     ASPECT_RATIO: 1.4,        // カードの縦横比 (高さ / 幅)
-    MAX_ROWS_IN_HALF: 5.2,    // 画面半分(自陣)に縦に何枚分収めるか (高さ計算の基準)
-    MAX_COLS_ON_SCREEN: 8.5,  // 画面横幅に何枚分収めるか (幅計算の基準)
+    MAX_ROWS_IN_HALF: 4.2,    // 画面半分(自陣)に縦に何枚分収めるか (高さ計算の基準)
+    MAX_COLS_ON_SCREEN: 6.8,  // 画面横幅に何枚分収めるか (幅計算の基準)
     SCALE_ADJUST: 1.4,        // 幅基準で計算した際のスケール補正係数
   },
 
