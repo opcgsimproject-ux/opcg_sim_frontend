@@ -16,8 +16,6 @@ import { logger } from '../utils/logger';
 import { handleLocalAction } from '../game/localActionHandler';
 import { getCardImageUrl } from '../utils/imageAssets';
 
-
-// --- モックデッキ定義 ---
 const MOCK_DECKS: Record<string, any> = {
   'imu.json': {
     leader: { name: "イム", card_id: "ST01-001", power: 5000, type: "LEADER", life: 5 },
@@ -49,7 +47,6 @@ const MOCK_DECKS: Record<string, any> = {
 
 type DragState = { card: CardInstance; sprite: PIXI.Container; startPos: { x: number, y: number }; } | null;
 
-// ▼▼▼ 修正: Props定義に initialP1DeckId, initialP2DeckId を追加 ▼▼▼
 interface SandboxGameProps { 
   gameId?: string; 
   myPlayerId?: string; 
@@ -176,22 +173,6 @@ export const SandboxGame = ({
       const options: DeckOption[] = [];
 
       try {
-        const localIds = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
-        localIds.forEach((id: string) => {
-          const deckData = localStorage.getItem(`opcg_deck_${id}`);
-          if (deckData) {
-            const parsed = JSON.parse(deckData);
-            let leaderId = parsed.leader_id;
-            if (!leaderId && parsed.deck && parsed.deck.leader) {
-               const l = Array.isArray(parsed.deck.leader) ? parsed.deck.leader[0] : parsed.deck.leader;
-               if (l) leaderId = l.uuid || l.card_id;
-            }
-            options.push({ id: id, name: parsed.name || `Local Deck ${id}`, leaderId: leaderId });
-          }
-        });
-      } catch(e) { console.error(e); }
-
-      try {
         const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
         const data = await res.json();
         if (data.success) {
@@ -210,7 +191,6 @@ export const SandboxGame = ({
     fetchDecks();
   }, []);
 
-  // ▼▼▼ 修正: 初期化ロジックの変更（デッキIDがある場合は準備完了とする） ▼▼▼
   useEffect(() => {
     if (isLocalMode) {
       const hasInitialDecks = !!(initialP1DeckId && initialP2DeckId);
@@ -263,9 +243,8 @@ export const SandboxGame = ({
     };
     initGame();
     return () => { if (ws) ws.close(); };
-  }, [isLocalMode, initialP1DeckId, initialP2DeckId]); // 依存配列に追加
+  }, [isLocalMode, initialP1DeckId, initialP2DeckId]); 
 
-  // ▼▼▼ 追加: 自動開始ロジック ▼▼▼
   const hasAutoStartedRef = useRef(false);
   useEffect(() => {
     if (
@@ -529,7 +508,6 @@ export const SandboxGame = ({
             return;
         }
 
-        // --- ケース2: タップ (ドラッグせずに離した) ---
         if (pendingDragRef.current) {
             const card = pendingDragRef.current.card;
             pendingDragRef.current = null;
@@ -674,7 +652,6 @@ export const SandboxGame = ({
       } catch(e) { console.error(e); alert('アクションエラー'); } finally { setIsPending(false); }
   };
 
-  // ▼▼▼ 修正: 待機画面の条件を変更（自動開始待ちの場合は表示しない） ▼▼▼
   const shouldShowSetupScreen = gameState && gameState.status === 'WAITING' && !(initialP1DeckId && initialP2DeckId);
 
   if (shouldShowSetupScreen) {
@@ -806,7 +783,6 @@ export const SandboxGame = ({
           </div>
         </div>
       )}
-      {/* 修正: 待機画面を表示しない場合（自動開始中）でもLoadingを出すように調整 */}
       {(!gameState || (gameState.status === 'WAITING' && initialP1DeckId && initialP2DeckId)) && (
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', color: 'white' }}>
           <h2>Loading...</h2>
