@@ -581,7 +581,23 @@ const CardCatalogScreen = ({ allCards, mode, currentDeck, onUpdateDeck, onClose,
 
     if (searchText) {
       const lower = searchText.toLowerCase();
-      res = res.filter(c => (c.name?.toLowerCase().includes(lower)) || (c.text?.toLowerCase().includes(lower)));
+      res = res.filter(c => {
+        const searchTarget = [
+          c.name,
+          c.text,
+          c.type,
+          ...(c.color || []),
+          ...(c.attributes || []),
+          ...(c.traits || []),
+          c.uuid,
+          c.cost?.toString(),
+          c.power?.toString(),
+          c.counter?.toString(),
+          c.trigger_text
+        ].filter(Boolean).join(' ').toLowerCase();
+        
+        return searchTarget.includes(lower);
+      });
     }
 
     const typeOrder: Record<string, number> = { 'LEADER': 1, 'CHARACTER': 2, 'EVENT': 3, 'STAGE': 4 };
@@ -781,15 +797,12 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
     fetchData();
   }, [mode, viewOnly]);
 
-  // ▼▼▼ 修正: handleSaveDeck に強力なクリーンアップロジックを追加 ▼▼▼
   const handleSaveDeck = async () => {
     if (!currentDeck) return;
     
-    // 保存対象のデータをコピー
     const deckData = { ...currentDeck };
-    const oldId = deckData.id; // 元のID（local-XXX など）
+    const oldId = deckData.id; 
     
-    // 一時ID(local-...)の場合は、IDフィールドを削除してサーバーに新規採番させる
     if (oldId && oldId.startsWith('local-')) {
         delete deckData.id;
     }
@@ -804,9 +817,8 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
       
       if (data.success) {
          const serverId = data.deck_id;
-         const finalDeck = { ...deckData, id: serverId }; // サーバー発行のIDをセット
+         const finalDeck = { ...deckData, id: serverId }; 
 
-         // サーバーIDでローカルストレージに保存（キャッシュ用）
          const leaderCard = allCards.find(c => c.uuid === finalDeck.leader_id);
          const cardObjects = finalDeck.card_uuids.map(uuid => allCards.find(c => c.uuid === uuid)).filter(Boolean);
          const sandboxFormat = {
@@ -818,33 +830,22 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
          };
          localStorage.setItem(`opcg_deck_${serverId}`, JSON.stringify(sandboxFormat));
          
-         // ローカルストレージのIDリストを更新
          const currentIds = JSON.parse(localStorage.getItem('opcg_local_deck_ids') || '[]');
          
-         // 1. 古いID（local-）がまだリストにあれば削除する
          let newIds = currentIds.filter((id: string) => id !== oldId);
          
-         // 2. 新しいIDを追加（まだなければ）
          if (!newIds.includes(serverId)) {
             newIds.push(serverId);
          }
 
-         // 3. ローカルファイルの物理削除
-         // oldId が local- で、かつ 新しいIDと異なるなら、古いキャッシュファイルを消す
          if (oldId && oldId.startsWith('local-') && oldId !== serverId) {
             localStorage.removeItem(`opcg_deck_${oldId}`);
-            
-            // 念のため、サーバー上に万が一ゴミデータとして保存されてしまっていた場合に備えて削除リクエストを送る
-            // （404でも構わないので非同期で投げておく）
             fetch(`${API_CONFIG.BASE_URL}/api/deck/${oldId}`, { method: 'DELETE' }).catch(() => {});
          }
          
-         // IDリストを保存
          localStorage.setItem('opcg_local_deck_ids', JSON.stringify(newIds));
 
-         // 画面のリスト更新
          setDecks(prev => {
-            // 古いIDを除外し、新しいデッキを追加
             const filtered = prev.filter(d => d.id !== oldId && d.id !== serverId);
             return [finalDeck, ...filtered];
          });
@@ -860,7 +861,6 @@ export const DeckBuilder = ({ onBack, viewOnly = false }: { onBack: () => void, 
         alert('サーバー通信エラーが発生しました。保存できません。'); 
     }
   };
-  // ▲▲▲ 修正終わり ▲▲▲
 
   const handleDeleteDeck = async (deckId: string) => {
     console.log(`[Delete] 削除開始: ID=${deckId}`);
