@@ -579,6 +579,7 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
 
     {showSearchModal && modalCandidates.length > 0 && (
       <CardSelectModal
+        key={pendingRequest?.request_id} 
         candidates={modalCandidates}
         message={pendingRequest?.message || ""}
         minSelect={constraints.min ?? 1}
