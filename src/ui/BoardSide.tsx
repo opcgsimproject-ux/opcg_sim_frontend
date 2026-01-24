@@ -3,7 +3,7 @@ import type { LayoutCoords } from '../layout/layoutEngine';
 import { createCardContainer } from './CardRenderer';
 import type { PlayerState, CardInstance, BoardCard } from '../game/types';
 import { logger } from '../utils/logger';
-import { LAYOUT_CONSTANTS, LAYOUT_PARAMS } from '../layout/layout.config';
+// 未使用のインポートを削除しました
 
 export const createBoardSide = (
   p: PlayerState, 
@@ -14,7 +14,7 @@ export const createBoardSide = (
 ) => {
   const side = new PIXI.Container();
   const z = p.zones;
-  const { COLORS } = LAYOUT_CONSTANTS;
+  // 未使用の COLORS 定義を削除しました
   
   // Sandbox仕様: サイズ縮小用の係数 (70%)
   const SMALL_SCALE = 0.7;
