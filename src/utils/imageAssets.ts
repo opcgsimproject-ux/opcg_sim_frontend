@@ -13,6 +13,7 @@ export const getBackImageUrl = (type: 'DON' | 'MAIN' = 'MAIN'): string => {
   return `${API_CONFIG.IMAGE_BASE_URL}/OPCG_back.png`;
 };
 
+
 // 全カードの画像をプリフェッチ（キャッシュ）する関数
 export const prefetchAllCardImages = async (cards: { uuid: string; card_id?: string }[], onProgress?: (current: number, total: number) => void) => {
   logger.log({ level: 'info', action: 'assets.prefetch_start', msg: 'Starting image prefetch', payload: { count: cards.length } });
