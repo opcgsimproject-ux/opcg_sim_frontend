@@ -160,19 +160,33 @@ export const createCardContainer = (
       addText(`${card.cost}`, { fontSize: SIZES.FONT_COST, fill: COLORS.TEXT_LIGHT, fontWeight: 'bold' }, cx, cy, 'screen');
     }
 
-    // 2. パワー表示 (箱サイズ固定・文字自動縮小)
+    // 2. パワー表示 (カードサイズ比率で自動計算)
     if (card?.power !== undefined && !isResource) {
-      // --- 固定ボックス設定 ---
-      const boxWidth = 38;  // 固定幅
-      const boxHeight = 14; // 固定高さ
+      // --- サイズ・位置の計算 ---
+      // 高さ: カード高さの約16%
+      const boxHeight = ch * 0.16; 
+      // 上マージン: カード高さの約5%
+      const marginY = ch * 0.05;
+      const boxY = -ch / 2 + marginY;
 
-      // 開始位置 (コストバッジの右、なければ左端)
-      const startX = hasCost 
-        ? (-cw / 2 + UI_DETAILS.CARD_BADGE_OFFSET + SHAPE.CORNER_RADIUS_BADGE + 4) 
-        : (-cw / 2 + 6);
-      const boxY = -ch / 2 + 6;
+      // 左端位置 (コストバッジの右、なければ左端マージン)
+      // コストバッジ半径等は定数参照だが、簡易的に cw の比率でマージンを取る
+      const marginX = cw * 0.08; 
+      const badgeSpace = hasCost ? (UI_DETAILS.CARD_BADGE_OFFSET + SHAPE.CORNER_RADIUS_BADGE * 2) : 0;
+      
+      const startX = -cw / 2 + marginX + (hasCost ? badgeSpace * 0.8 : 0);
+      
+      // 右端限界 (カード右端から5%内側)
+      const limitX = cw / 2 - (cw * 0.05);
+      
+      // 幅を算出 (最大幅を使用)
+      let boxWidth = limitX - startX;
+      // 幅が極端に狭くなる場合(コストありでカードが細い等)の最低保証は考慮してもよいが
+      // 基本レイアウトなら十分な幅になるはず
+      if (boxWidth < cw * 0.3) boxWidth = cw * 0.3; // 最低でも3割確保
 
-      // 黒い背景ボックス (固定サイズ)
+      // --- 描画 ---
+      // 黒い背景ボックス
       const powerBox = new PIXI.Graphics()
         .beginFill(0x000000, 1)
         .drawRoundedRect(0, 0, boxWidth, boxHeight, 4)
@@ -181,8 +195,11 @@ export const createCardContainer = (
       container.addChild(powerBox);
 
       // パワー数値テキスト
+      // フォントサイズもボックス高さに合わせて決定 (高さの80%程度)
+      const baseFontSize = boxHeight * 0.85;
+      
       const pText = new PIXI.Text(`${card.power}`, {
-        fontSize: 11, // 基本サイズ
+        fontSize: baseFontSize,
         fill: 0xFFFFFF,
         fontWeight: 'bold',
         fontFamily: 'Arial',
@@ -190,18 +207,14 @@ export const createCardContainer = (
       });
       pText.anchor.set(0.5);
       pText.position.set(startX + boxWidth / 2, boxY + boxHeight / 2);
-      pText.rotation = 0; // カードに追従
+      pText.rotation = 0; 
 
-      // --- 文字サイズの自動縮小 ---
-      const maxTextWidth = boxWidth - 2;  // 横マージン確保
-      const maxTextHeight = boxHeight - 2; // 縦マージン確保
-      
-      // 幅または高さが溢れる場合のみ縮小率を計算
-      const scaleX = pText.width > maxTextWidth ? maxTextWidth / pText.width : 1;
-      const scaleY = pText.height > maxTextHeight ? maxTextHeight / pText.height : 1;
-      const finalScale = Math.min(scaleX, scaleY);
-      
-      pText.scale.set(finalScale);
+      // --- 文字サイズの自動縮小 (Width Fit) ---
+      const maxTextWidth = boxWidth * 0.9; // 左右マージン考慮
+      if (pText.width > maxTextWidth) {
+        const scale = maxTextWidth / pText.width;
+        pText.scale.set(scale);
+      }
 
       container.addChild(pText);
     }
