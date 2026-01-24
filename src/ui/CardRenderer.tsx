@@ -27,16 +27,10 @@ export const createCardContainer = (
     container.rotation = Math.PI / 2;
   }
 
-  // ▼ デバッグログ: リーダーカードのデータ状態を確認
+  // リーダーカードのデバッグログ（変更なし）
   const isLeader = card?.type === 'LEADER' || card?.type === 'リーダー';
   if (isLeader) {
-    console.log(`[CardRenderer] Rendering Leader:`, {
-      name: card.name,
-      uuid: card.uuid,
-      card_id: card.card_id,
-      id: card.id,
-      is_face_up: card.is_face_up
-    });
+    // console.log(...) // 必要に応じて残す
   }
 
   // --- 画像URLの決定 ---
@@ -51,20 +45,16 @@ export const createCardContainer = (
     } else if (isBack) {
       imageUrl = getBackImageUrl('MAIN');
     } else {
-      // IDチェック（リーダー等の揺らぎ吸収）
       const targetId = card?.card_id || card?.uuid || card?.id;
       if (targetId) {
         imageUrl = getCardImageUrl(targetId);
-        if (isLeader) console.log(`[CardRenderer] Leader determined URL: ${imageUrl}`);
-      } else if (isLeader) {
-        console.warn(`[CardRenderer] Leader has NO ID!`);
       }
     }
   }
 
   // --- 描画処理 ---
   if (isEmpty) {
-    // 0枚時は枠のみ
+    // 0枚時は枠のみ（変更なし）
     const g = new PIXI.Graphics();
     g.lineStyle(2, 0x666666, 0.5);
     g.beginFill(0x000000, 0.2);
@@ -78,20 +68,11 @@ export const createCardContainer = (
 
   } else if (imageUrl) {
     // --- 画像表示モード ---
-    
-    // 1. まずは「裏面」画像を取得（フォールバック用）
     const fallbackUrl = getBackImageUrl('MAIN');
-    // 裏面は共通なのでキャッシュを活用
     const fallbackTexture = PIXI.Texture.from(fallbackUrl);
-    
-    // 2. 本命のテクスチャ
-    // ★重要修正: キャッシュ汚染（CORS Cache Taint）を回避するため、
-    // ゲーム画面用には独自のクエリパラメータを付与して別キャッシュとして読み込ませる
     const webglUrl = imageUrl + '?format=webgl'; 
     const targetTexture = PIXI.Texture.from(webglUrl);
 
-    // 3. スプライト作成
-    // 本命が既にロード済み(valid)ならそれを、そうでなければ裏面を初期設定
     const initialTexture = targetTexture.valid ? targetTexture : fallbackTexture;
     const sprite = new PIXI.Sprite(initialTexture);
     
@@ -99,27 +80,16 @@ export const createCardContainer = (
     sprite.height = ch;
     sprite.anchor.set(0.5);
 
-    // 4. ロード完了監視と差し替え
     if (!targetTexture.valid && imageUrl !== fallbackUrl) {
         const updateTexture = () => {
-            if (isLeader) console.log(`[CardRenderer] Leader image loaded: ${webglUrl}`);
             if (!sprite.destroyed) {
                 sprite.texture = targetTexture;
                 sprite.width = cw;
                 sprite.height = ch;
             }
         };
-
-        // イベントリスナーの設定
         targetTexture.baseTexture.on('update', updateTexture);
         targetTexture.baseTexture.on('loaded', updateTexture);
-        
-        targetTexture.baseTexture.on('error', (event) => {
-            if (isLeader) {
-                console.error(`[CardRenderer] Leader image FAILED to load: ${webglUrl}`, event);
-            }
-            logger.warn('ui.texture_error', `Failed to load image: ${imageUrl}`);
-        });
     }
     
     const mask = new PIXI.Graphics();
@@ -137,7 +107,7 @@ export const createCardContainer = (
     container.addChild(border);
 
   } else {
-    // 画像なし & 裏面でない場合のフォールバック（色塗り）
+    // 画像なしフォールバック（変更なし）
     const g = new PIXI.Graphics();
     g.lineStyle(SHAPE.STROKE_WIDTH_ZONE, COLORS.ZONE_BORDER);
     g.beginFill(isBack ? COLORS.CARD_BACK : COLORS.ZONE_FILL);
@@ -151,7 +121,7 @@ export const createCardContainer = (
   // テキスト追加ヘルパー
   const addText = (content: string, style: any, x: number, y: number, rotationMode: 'screen' | 'card' | number = 'screen') => {
     const txt = new PIXI.Text(content, style);
-    if (!isBack && imageUrl) {
+    if (!isBack && imageUrl && style.fill !== '#ffffff') { // 白文字以外は縁取り
       style.stroke = '#000000';
       style.strokeThickness = 3;
       txt.style = style;
@@ -182,8 +152,10 @@ export const createCardContainer = (
   if (!isBack) {
     const isResource = ['Trash', 'Deck', 'Life'].includes(cardName) || cardName.startsWith('Don!!');
     
-    // バッジ（コスト）- Leaderは表示しない
+    // 1. コストバッジ (左上)
+    let hasCost = false;
     if (card?.cost !== undefined && !isLeader && !isResource) {
+      hasCost = true;
       const cx = -cw / 2 + UI_DETAILS.CARD_BADGE_OFFSET;
       const cy = -ch / 2 + UI_DETAILS.CARD_BADGE_OFFSET;
       const costBadge = new PIXI.Graphics()
@@ -195,26 +167,56 @@ export const createCardContainer = (
       addText(`${card.cost}`, { fontSize: SIZES.FONT_COST, fill: COLORS.TEXT_LIGHT, fontWeight: 'bold' }, cx, cy, 'screen');
     }
 
-    // カウンター
+    // 2. パワー表示 (コストの右隣に黒箱白文字)
+    // リーダーカードまたはキャラカードで、パワーが定義されている場合
+    if (card?.power !== undefined && !isResource) {
+      // コストバッジがある場合はその右、なければ左上端からのオフセット
+      const startX = hasCost 
+        ? (-cw / 2 + UI_DETAILS.CARD_BADGE_OFFSET + SHAPE.CORNER_RADIUS_BADGE + 4) 
+        : (-cw / 2 + 4);
+      
+      const boxY = -ch / 2 + 4; // 上端から少し空ける
+      const boxHeight = 16;
+      const boxWidth = 42;
+      
+      // 黒い背景ボックス
+      const powerBox = new PIXI.Graphics()
+        .beginFill(0x000000, 1) // 完全な黒
+        .drawRoundedRect(0, 0, boxWidth, boxHeight, 4)
+        .endFill();
+      powerBox.position.set(startX, boxY);
+      container.addChild(powerBox);
+
+      // パワー数値
+      const pText = new PIXI.Text(`${card.power}`, {
+        fontSize: 11,
+        fill: 0xFFFFFF, // 白文字
+        fontWeight: 'bold',
+        fontFamily: 'Arial'
+      });
+      pText.anchor.set(0.5);
+      // ボックスの中心に配置
+      pText.position.set(startX + boxWidth / 2, boxY + boxHeight / 2);
+      
+      // カードが回転しても文字は読みやすい向き（screen）にするか、カードに追従（card）するか
+      // ここでは枠内デザインの一部としてカードに追従させます (rotation: 0)
+      container.addChild(pText);
+    }
+
+    // 3. カウンター (右端中央)
     if (card?.counter !== undefined && card.counter > 0) {
       const xOffset = isOpponent ? (cw / 2 - UI_DETAILS.CARD_TEXT_PADDING_X) : (-cw / 2 + UI_DETAILS.CARD_TEXT_PADDING_X);
       addText(`+${card.counter}`, { fontSize: SIZES.FONT_COUNTER, fill: '#ffff00', fontWeight: 'bold', stroke: 'black', strokeThickness: 4 }, xOffset, 0, -Math.PI / 2);
     }
 
-    // パワー
-    if (card?.power !== undefined && !isResource) {
-      const pStyle = { fontSize: SIZES.FONT_POWER, fill: COLORS.TEXT_POWER, fontWeight: 'bold', stroke: 'black', strokeThickness: 4 };
-      if (isRest) {
-        addText(`${card.power}`, pStyle, -cw / 2 - UI_DETAILS.CARD_TEXT_PADDING_X, 0, 'screen');
-      } else {
-        addText(`${card.power}`, pStyle, 0, -ch / 2 - UI_DETAILS.CARD_TEXT_PADDING_X, 'screen');
-      }
-    }
-
-    // ドン!!付与数
+    // 4. ドン!!付与数 (右下へ移動)
     if (card?.attached_don > 0) {
+      // ▼▼▼ 修正: 位置を右上から右下へ変更 ▼▼▼
+      // isOpponentの場合でもカードの下辺に来るように調整
       const bx = isOpponent ? (-cw / 2 + UI_DETAILS.CARD_BADGE_DON_OFFSET) : (cw / 2 - UI_DETAILS.CARD_BADGE_DON_OFFSET);
-      const by = isOpponent ? (ch / 2 - UI_DETAILS.CARD_BADGE_DON_OFFSET) : (-ch / 2 + UI_DETAILS.CARD_BADGE_DON_OFFSET);
+      // by を下部 (ch / 2) 側に設定
+      const by = isOpponent ? (-ch / 2 + UI_DETAILS.CARD_BADGE_DON_OFFSET) : (ch / 2 - UI_DETAILS.CARD_BADGE_DON_OFFSET);
+      
       const donBadge = new PIXI.Graphics()
         .beginFill(COLORS.BADGE_DON_BG, 1)
         .lineStyle(1, 0xFFFFFF)
@@ -224,7 +226,7 @@ export const createCardContainer = (
       addText(`+${card.attached_don}`, { fontSize: SIZES.FONT_DON, fill: COLORS.TEXT_LIGHT, fontWeight: 'bold' }, bx, by, 'screen');
     }
 
-    // カード名テキスト
+    // カード名テキスト (画像がない場合のみ)
     if (!imageUrl) {
         const nameStyle = { 
             fontSize: isResource ? SIZES.FONT_NAME_RESOURCE : SIZES.FONT_NAME_NORMAL, 
@@ -251,7 +253,7 @@ export const createCardContainer = (
     }
   }
 
-  // --- 重なり枚数バッジ ---
+  // --- 重なり枚数バッジ (変更なし) ---
   if (options.count !== undefined && options.count > 0) {
     const bx = isOpponent ? (-cw / 2 + UI_DETAILS.CARD_BADGE_OFFSET) : (cw / 2 - UI_DETAILS.CARD_BADGE_OFFSET);
     const by = isOpponent ? (-ch / 2 + UI_DETAILS.CARD_BADGE_OFFSET) : (ch / 2 - UI_DETAILS.CARD_BADGE_OFFSET);
