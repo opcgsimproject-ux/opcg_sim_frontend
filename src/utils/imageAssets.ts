@@ -13,38 +13,62 @@ export const getBackImageUrl = (type: 'DON' | 'MAIN' = 'MAIN'): string => {
   return `${API_CONFIG.IMAGE_BASE_URL}/OPCG_back.png`;
 };
 
-
 // 全カードの画像をプリフェッチ（キャッシュ）する関数
+// 【修正】強制的にネットワークから取得してキャッシュを上書きするように変更
 export const prefetchAllCardImages = async (cards: { uuid: string; card_id?: string }[], onProgress?: (current: number, total: number) => void) => {
-  logger.log({ level: 'info', action: 'assets.prefetch_start', msg: 'Starting image prefetch', payload: { count: cards.length } });
+  logger.log({ level: 'info', action: 'assets.prefetch_start', msg: 'Starting image prefetch (Force Update)', payload: { count: cards.length } });
   
-  // card_idの重複を除去（同じカードが複数あっても画像は1つでいいため）
   const uniqueIds = Array.from(new Set(cards.map(c => {
-    // uuidが "OP01-001-xxxx" のような形式の場合、先頭の "OP01-001" 部分をIDとして抽出する処理が必要な場合への備え
-    // 現状は card_id プロパティを優先し、なければ uuid をそのまま使う（DeckBuilderの実装に合わせる）
     return c.card_id || c.uuid;
   }).filter(id => id)));
 
   let loaded = 0;
   const total = uniqueIds.length;
-
-  // 並列処理数を制限しつつダウンロード（ブラウザの負荷軽減）
   const BATCH_SIZE = 5;
   
-  for (let i = 0; i < total; i += BATCH_SIZE) {
-    const batch = uniqueIds.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(async (id) => {
-      const url = getCardImageUrl(id);
-      try {
-        // fetchするだけでService Workerがキャッシュしてくれる
-        await fetch(url, { mode: 'cors', cache: 'reload' }); 
-      } catch (e) {
-        console.warn(`Failed to fetch image for ${id}`, e);
-      }
-    }));
+  // vite.config.ts で設定されているキャッシュ名と一致させる必要があります
+  const CACHE_NAME = 'card-images-cache'; 
+  
+  try {
+    // Cache Storage を直接開く
+    const cache = await caches.open(CACHE_NAME);
+
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+      const batch = uniqueIds.slice(i, i + BATCH_SIZE);
+      
+      await Promise.all(batch.map(async (id) => {
+        const url = getCardImageUrl(id);
+        try {
+          // 1. キャッシュバスター(?update=...)をつけて強制的にネットワークから取得
+          // これによりService Workerの古いキャッシュを回避し、必ず最新のバケットの画像を取りに行きます
+          const response = await fetch(`${url}?update=${Date.now()}`, { mode: 'cors' });
+          
+          if (response.ok) {
+            // 2. 取得したレスポンスを、元のURL（クエリなし）としてキャッシュに上書き保存
+            // これで次回以降、アプリ内ではこの新しい画像が使われます
+            await cache.put(url, response);
+          } else {
+             console.warn(`Failed to fetch image for ${id}: ${response.status}`);
+          }
+        } catch (e) {
+          console.warn(`Failed to fetch image for ${id}`, e);
+        }
+      }));
+      
+      loaded += batch.length;
+      if (onProgress) onProgress(Math.min(loaded, total), total);
+    }
+  } catch (err) {
+    // Cache APIが使えない環境などのフォールバック
+    logger.log({ level: 'error', action: 'assets.prefetch_error', msg: 'Error accessing cache storage', payload: { error: err } });
     
-    loaded += batch.length;
-    if (onProgress) onProgress(Math.min(loaded, total), total);
+    // 従来の方法（ただしSWがいると効果が薄い場合があります）
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+        const batch = uniqueIds.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(id => fetch(getCardImageUrl(id), { cache: 'reload', mode: 'cors' })));
+        loaded += batch.length;
+        if (onProgress) onProgress(Math.min(loaded, total), total);
+    }
   }
 
   logger.log({ level: 'info', action: 'assets.prefetch_complete', msg: 'Image prefetch completed' });
