@@ -38,7 +38,7 @@ export const calculateCoordinates = (W: number, H: number): LayoutCoords => {
   const CH = Math.min(chByHeight, chByWidth); 
   const CW = CH / P.CARD.ASPECT_RATIO;
   
-  // ▼▼▼ 修正: V_GAPの自動調整ロジック ▼▼▼
+  // V_GAPの自動調整ロジック
   let V_GAP = CH * P.SPACING.V_GAP_RATIO;
   
   // 4行分の高さが必要: (カード高 * 4) + (隙間 * 3)
@@ -55,7 +55,6 @@ export const calculateCoordinates = (W: number, H: number): LayoutCoords => {
     }
     V_GAP = Math.max(0, V_GAP);
   }
-  // ▲▲▲ 修正ここまで ▲▲▲
   
   const validateCoordinate = (val: number, label: string) => {
     if (isNaN(val)) {
@@ -81,8 +80,7 @@ export const calculateCoordinates = (W: number, H: number): LayoutCoords => {
     getDonRestX: (width) => validateCoordinate(width * P.X_RATIOS.DON_REST, 'donRestX'),
     getTrashX: (width) => validateCoordinate(width * P.X_RATIOS.TRASH, 'trashX'),
     getFieldX: (i, width, cardWidth, totalCards) => {
-      // ▼▼▼ 修正: 横幅の自動調整ロジック ▼▼▼
-      // 画面幅の96%を上限とする
+      // 横幅の自動調整ロジック
       const maxFieldWidth = width * 0.96;
       const standardGap = P.FIELD.GAP;
       let gap = standardGap;
@@ -91,18 +89,17 @@ export const calculateCoordinates = (W: number, H: number): LayoutCoords => {
 
       // 規定の幅を超える場合は、隙間(gap)を縮小して押し込む
       if (totalCards > 1 && standardTotalW > maxFieldWidth) {
-          // maxFieldWidth = (枚数 * 幅) + ((枚数-1) * gap)
-          // gap = (maxFieldWidth - (枚数 * 幅)) / (枚数 - 1)
           gap = (maxFieldWidth - (totalCards * cardWidth)) / (totalCards - 1);
-          // gapがマイナスになった場合はカードが重なる表示になります
       }
 
       // 最終的な全体幅を再計算
       const currentTotalW = totalCards * cardWidth + (totalCards - 1) * gap;
       
-      // 中央揃え
-      const startX = (width - currentTotalW) / 2 + P.FIELD.X_OFFSET; 
-      // ▲▲▲ 修正ここまで ▲▲▲
+      // 中央揃え (左端の座標)
+      const rectLeftX = (width - currentTotalW) / 2 + P.FIELD.X_OFFSET;
+      
+      // カードは中心基準(anchor=0.5)なので、半径分ずらす
+      const startX = rectLeftX + cardWidth / 2;
 
       return validateCoordinate(startX + i * (cardWidth + gap), `fieldX_${i}`);
     },
