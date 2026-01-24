@@ -15,6 +15,11 @@ export const createSandboxBoardSide = (
   const side = new PIXI.Container();
   const z = p.zones;
 
+  // サイズ縮小用の係数 (70%)
+  const SMALL_SCALE = 0.7;
+  const smallCW = coords.CW * SMALL_SCALE;
+  const smallCH = coords.CH * SMALL_SCALE;
+
   // X座標を反転させるヘルパー
   const getX = (baseX: number) => isOpponent ? W - baseX : baseX;
 
@@ -101,7 +106,6 @@ export const createSandboxBoardSide = (
   const r4Y = getAdjustedY(4);
 
   // リーダー
-  // ▼ 修正: リーダーが配列として渡ってきた場合に対応 (DeckBuilderの保存形式への対応)
   let leaderCard = p.leader;
   if (Array.isArray(leaderCard)) {
     leaderCard = (leaderCard as any)[0];
@@ -147,23 +151,23 @@ export const createSandboxBoardSide = (
   if (topDeck) setupInteractive(deck, topDeck);
   side.addChild(deck);
 
-  // トラッシュ
+  // トラッシュ (70%サイズ)
   const topTrash = z.trash && z.trash.length > 0 ? z.trash[z.trash.length - 1] : null;
   const trash = createCardContainer(
     { uuid: `trash-${p.player_id}`, name: 'Trash', card_id: topTrash?.card_id } as any, 
-    coords.CW, coords.CH, 
+    smallCW, smallCH, 
     { ...getCardOpts({} as any), count: z.trash?.length || 0 }
   );
   trash.x = getX(coords.getTrashX(W)); trash.y = r3Y;
   if (topTrash) setupInteractive(trash, topTrash);
   side.addChild(trash);
 
-  // ドン!!デッキ
+  // ドン!!デッキ (70%サイズ)
   const donDeckList = z.don_deck || []; 
   const donDeckCount = (p as any).don_deck_count ?? donDeckList.length;
   const donDeck = createCardContainer(
     { uuid: `dondeck-${p.player_id}`, name: 'Don!! Deck' } as any, 
-    coords.CW, coords.CH, 
+    smallCW, smallCH, 
     { ...getCardOpts({} as any), count: donDeckCount }
   );
   donDeck.x = getX(coords.getDonDeckX(W)); donDeck.y = r3Y;
@@ -171,11 +175,11 @@ export const createSandboxBoardSide = (
   if (topDon) setupInteractive(donDeck, topDon);
   side.addChild(donDeck);
 
-  // アクティブドン
+  // アクティブドン (70%サイズ)
   const donActiveList = (p as any).don_active || [];
   const donActive = createCardContainer(
     { uuid: `donactive-${p.player_id}`, name: 'Don!! Active', card_id: 'DON' } as any, 
-    coords.CW, coords.CH, 
+    smallCW, smallCH, 
     { ...getCardOpts({} as any), count: donActiveList.length }
   );
   donActive.x = getX(coords.getDonActiveX(W)); donActive.y = r3Y;
@@ -183,11 +187,11 @@ export const createSandboxBoardSide = (
   if (topActiveDon) setupInteractive(donActive, topActiveDon);
   side.addChild(donActive);
 
-  // レストドン
+  // レストドン (70%サイズ)
   const donRestList = (p as any).don_rested || [];
   const donRest = createCardContainer(
     { uuid: `donrest-${p.player_id}`, name: 'Don!! Rest', is_rest: true, card_id: 'DON' } as any, 
-    coords.CW, coords.CH, 
+    smallCW, smallCH, 
     { ...getCardOpts({} as any), count: donRestList.length }
   );
   donRest.x = getX(coords.getDonRestX(W)); donRest.y = r3Y;
