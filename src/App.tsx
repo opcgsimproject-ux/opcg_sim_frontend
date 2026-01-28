@@ -51,7 +51,7 @@ export default function App() {
 
   const [selectedDecks, setSelectedDecks] = useState<{ p1: string; p2: string }>(() => {
     const saved = sessionStorage.getItem('opcg_selected_decks');
-    // 変更: デフォルト値を空文字にする（Imu/Namiを勝手に入れない）
+    // 変更: デフォルト値を空文字にする
     return saved ? JSON.parse(saved) : { p1: '', p2: '' };
   });
 

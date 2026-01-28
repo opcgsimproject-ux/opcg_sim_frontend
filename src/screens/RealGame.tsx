@@ -14,36 +14,6 @@ import CONST from '../../shared_constants.json';
 import { logger } from '../utils/logger';
 import type { GameState, CardInstance, PendingRequest } from '../game/types';
 
-// SandboxGameと同じモックデータを定義
-const MOCK_DECKS: Record<string, any> = {
-  'imu.json': {
-    leader: { name: "イム", card_id: "ST01-001", power: 5000, type: "LEADER", life: 5 },
-    cards: Array.from({ length: 50 }, (_, i) => ({
-      name: `聖地マリージョア兵 ${i + 1}`,
-      card_id: `OP01-${String(i + 1).padStart(3, '0')}`,
-      power: 3000 + (i % 5) * 1000,
-      cost: 1 + (i % 5),
-      counter: 1000,
-      type: "CHARACTER",
-      trigger_text: i % 3 === 0 ? "トリガーあり" : "",
-      effect_text: "登場時: カードを1枚引く。"
-    }))
-  },
-  'nami.json': {
-    leader: { name: "ナミ", card_id: "OP03-040", power: 5000, type: "LEADER", life: 5 },
-    cards: Array.from({ length: 50 }, (_, i) => ({
-      name: `クリマ・タクト ${i + 1}`,
-      card_id: `OP03-${String(i + 1).padStart(3, '0')}`,
-      power: 2000 + (i % 4) * 1000,
-      cost: 1 + (i % 4),
-      counter: 2000,
-      type: "EVENT",
-      trigger_text: i % 2 === 0 ? "トリガー: 手札に加える" : "",
-      effect_text: "メイン: 相手のキャラ1枚をレストにする。"
-    }))
-  }
-};
-
 export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1Deck: string, p2Deck: string, onBack: () => void }) => {
   const pixiContainerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
@@ -60,10 +30,8 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
   
   const [layoutCoords, setLayoutCoords] = useState<{ x: number, y: number } | null>(null);
   
-  // デフォルト値を削除し、propsの値をそのまま使う（空なら空のまま）
   const [p1DeckId, setP1DeckId] = useState(initialP1 || '');
   const [p2DeckId, setP2DeckId] = useState(initialP2 || '');
-  // 両方のデッキが指定されている場合のみセットアップ完了とする
   const [isSetupComplete, setIsSetupComplete] = useState(!!(initialP1 && initialP2));
   
   const [deckOptions, setDeckOptions] = useState<DeckOption[]>([]);
@@ -81,62 +49,18 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
     pendingRequest
   );
 
-  // Sandboxと同じデッキデータ取得ロジック
-  const getDeckData = async (deckId: string) => {
-      if (!deckId) return { leader: [], cards: [] };
-      if (MOCK_DECKS[deckId]) return MOCK_DECKS[deckId];
-      
-      let cacheKey = `opcg_deck_${deckId}`;
-      if (deckId.startsWith('db:')) cacheKey = `opcg_deck_${deckId.substring(3)}`;
-      
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) { try { return JSON.parse(cached); } catch(e) {} }
-      
-      if (!deckId.startsWith('db:') && !['imu.json', 'nami.json'].includes(deckId)) return { leader: [], cards: [] };
-      
-      const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/get?id=${deckId.startsWith('db:') ? deckId.substring(3) : deckId}`);
-      if (!res.ok) throw new Error('Deck fetch failed');
-      const data = await res.json();
-      const finalData = data.deck || data;
-      localStorage.setItem(cacheKey, JSON.stringify(finalData));
-      return finalData;
-  };
-
-  // Sandboxと同じデータ正規化ロジック
-  const normalizeDeckData = (data: any) => {
-    if (!data) return { leader: null, cards: [] };
-    let leader = data.leader;
-    if (Array.isArray(leader)) {
-        leader = leader.length > 0 ? leader[0] : null;
-    }
-    if (data.deck && data.deck.leader) {
-         if (Array.isArray(data.deck.leader)) {
-             leader = data.deck.leader.length > 0 ? data.deck.leader[0] : null;
-         } else {
-             leader = data.deck.leader;
-         }
-    }
-    return {
-        ...data,
-        leader: leader,
-        cards: data.cards || (data.deck ? data.deck.cards : [])
-    };
-  };
-
   useEffect(() => {
     if (isSetupComplete) return;
 
     const fetchDecks = async () => {
       const options: DeckOption[] = [];
       
-      // SandboxGameと同様に、ローカルストレージ('opcg_local_deck_ids')の読み込みループは削除
-
+      // Sandboxと同じロジック：APIから取得して db: プレフィックスを付与
       try {
         const res = await fetch(`${API_CONFIG.BASE_URL}/api/deck/list`);
         const data = await res.json();
         if (data.success) {
           data.decks.forEach((d: any) => { 
-            // DB由来のデッキには 'db:' プレフィックスをつける（Sandbox準拠）
             if (!d.id.endsWith('.json')) {
               options.push({ id: `db:${d.id}`, name: d.name, leaderId: d.leader_id }); 
             }
@@ -144,7 +68,7 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
         }
       } catch(e) { console.error(e); }
 
-      // Sandbox準拠でMOCKも追加
+      // デフォルトデッキ（ファイル読み込み用）を追加
       options.unshift(
         { id: 'imu.json', name: 'Imu (Default)', leaderId: 'ST01-001' },
         { id: 'nami.json', name: 'Nami (Default)', leaderId: 'OP03-040' }
@@ -157,23 +81,11 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
     fetchDecks();
   }, [isSetupComplete]);
 
-  const handleGameStart = async () => {
+  const handleGameStart = () => {
     if (p1DeckId && p2DeckId) {
       setIsSetupComplete(true);
-      
-      try {
-        // Sandboxと同じく、IDからデータを解決し、正規化してから開始
-        const [d1, d2] = await Promise.all([getDeckData(p1DeckId), getDeckData(p2DeckId)]);
-        const p1Payload = normalizeDeckData(d1);
-        const p2Payload = normalizeDeckData(d2);
-        
-        // JSON文字列として送信（バックエンドが対応していることを期待、あるいはファイルパス問題の回避）
-        startGame(JSON.stringify(p1Payload), JSON.stringify(p2Payload));
-      } catch(e) {
-        console.error("Deck resolution failed", e);
-        setErrorToast("デッキデータの読み込みに失敗しました");
-        setIsSetupComplete(false);
-      }
+      // JSON展開せず、IDをそのまま送信（バックエンドが解決する）
+      startGame(p1DeckId, p2DeckId);
     }
   };
 
@@ -339,7 +251,7 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
     const coords = calculateCoordinates(window.innerWidth, window.innerHeight);
     setLayoutCoords(coords.turnEndPos);
 
-    // startGameはhandleGameStartで呼び出すためここでは削除
+    // handleGameStart内でstartGameを呼ぶため、ここは不要
 
     const handleResize = () => {
       app.renderer.resize(window.innerWidth, window.innerHeight);
