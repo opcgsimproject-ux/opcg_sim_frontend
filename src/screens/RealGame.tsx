@@ -31,8 +31,8 @@ export const RealGame = ({ p1Deck: initialP1, p2Deck: initialP2, onBack }: { p1D
   
   const [layoutCoords, setLayoutCoords] = useState<{ x: number, y: number } | null>(null);
   
-  const [p1DeckId, setP1DeckId] = useState(initialP1 || 'imu.json');
-  const [p2DeckId, setP2DeckId] = useState(initialP2 || 'nami.json');
+  const [p1DeckId, setP1DeckId] = useState(initialP1 || ''); // 修正: デフォルト値を削除
+  const [p2DeckId, setP2DeckId] = useState(initialP2 || ''); // 修正: デフォルト値を削除
   const [isSetupComplete, setIsSetupComplete] = useState(!!(initialP1 && initialP2));
   const [deckOptions, setDeckOptions] = useState<DeckOption[]>([]);
   const [selectingDeckFor, setSelectingDeckFor] = useState<'p1' | 'p2' | null>(null);

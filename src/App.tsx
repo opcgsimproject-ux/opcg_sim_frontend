@@ -81,8 +81,8 @@ export default function App() {
         setMode('sandbox');
     } else {
         setSelectedDecks({ 
-          p1: p1 || 'imu.json', 
-          p2: p2 || 'nami.json' 
+          p1: p1 || '', // 修正: デフォルト値を削除して空文字にする
+          p2: p2 || ''  // 修正: デフォルト値を削除して空文字にする
         });
         setMode('game');
     }
