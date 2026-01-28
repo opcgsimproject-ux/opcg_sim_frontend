@@ -45,14 +45,14 @@ class ErrorBoundary extends Component<Props, State> {
 }
 
 export default function App() {
-  // 対策①：初期値をsessionStorageから復元するように変更
   const [mode, setMode] = useState<'start' | 'game' | 'deck' | 'sandbox' | 'cardList' | 'lobby'>(() => {
     return (sessionStorage.getItem('opcg_app_mode') as any) || 'start';
   });
 
   const [selectedDecks, setSelectedDecks] = useState<{ p1: string; p2: string }>(() => {
     const saved = sessionStorage.getItem('opcg_selected_decks');
-    return saved ? JSON.parse(saved) : { p1: 'imu.json', p2: 'nami.json' };
+    // 変更: デフォルト値を空文字にする（Imu/Namiを勝手に入れない）
+    return saved ? JSON.parse(saved) : { p1: '', p2: '' };
   });
 
   const [sandboxOptions, setSandboxOptions] = useState<{ role: 'both' | 'p1' | 'p2', gameId?: string, room_name?: string }>(() => {
@@ -60,7 +60,6 @@ export default function App() {
     return saved ? JSON.parse(saved) : { role: 'both' };
   });
 
-  // 対策①：状態が変更されるたびにsessionStorageへ保存
   useEffect(() => {
     sessionStorage.setItem('opcg_app_mode', mode);
   }, [mode]);
@@ -80,9 +79,10 @@ export default function App() {
         setSandboxOptions(sbOptions || { role: 'both' });
         setMode('sandbox');
     } else {
+        // 変更: 引数が無い場合でもデフォルト値を入れず、空文字を設定してRealGame側で選択画面を出すようにする
         setSelectedDecks({ 
-          p1: p1 || '', // 修正: デフォルト値を削除して空文字にする
-          p2: p2 || ''  // 修正: デフォルト値を削除して空文字にする
+          p1: p1 || '', 
+          p2: p2 || '' 
         });
         setMode('game');
     }
